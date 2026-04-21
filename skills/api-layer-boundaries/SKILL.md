@@ -1,0 +1,67 @@
+---
+name: api-layer-boundaries
+description: Enforce layering in ASP.NET Core services - what belongs in controllers, application services, and repositories; DTO vs entity leakage; where transactions and validation live. Use when reviewing or designing API endpoints and service classes.
+---
+
+# API Layer Boundaries
+
+## Controller / endpoint: translation only
+
+A controller method does exactly: bind + validate input shape, call one application-layer method, map result to an HTTP response. Budget: ~10 lines. Anything else has leaked.
+
+Reject in controllers:
+- `DbContext` or repository injection. The controller must not know persistence exists.
+- Business conditionals (`if (order.Total > limit)`), loops over domain data, price/permission calculations.
+- `SaveChanges`, transactions, `try/catch` that maps exceptions to status codes per-action - use exception-handling middleware / `IExceptionHandler` once, globally.
+- Composing multiple service calls into a workflow. A workflow is an application-service method; the controller calls it by name.
+
+```csharp
+// WRONG: orchestration in controller
+[HttpPost]
+public async Task<IActionResult> Create(CreateOrderRequest req)
+{
+    var customer = await _customers.GetAsync(req.CustomerId);
+    if (customer.IsBlocked) return BadRequest("blocked");
+    var order = new Order { /* ... */ };
+    _db.Orders.Add(order);
+    await _db.SaveChangesAsync();
+    await _email.SendAsync(customer.Email, "...");
+    return Ok(order); // entity leaked, lazy-load serialization bomb included
+}
+// RIGHT
+[HttpPost]
+public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest req, CancellationToken ct)
+{
+    var result = await _orderService.CreateAsync(req.ToCommand(), ct);
+    return result is null ? Conflict() : CreatedAtAction(nameof(Get), new { id = result.Id }, result);
+}
+```
+
+## Never return or accept entities at the HTTP boundary
+
+- Returning an entity serializes navigation properties (cycles, lazy-load N+1 during serialization) and freezes your schema into your public contract - a column rename becomes a breaking API change.
+- Accepting an entity as a request body is mass assignment: the client can set `Id`, `IsAdmin`, `CreatedAt`, any FK. Bind to a request DTO that contains only client-settable fields, and map explicitly.
+- One DTO per direction and use case. Sharing a `UserDto` between create-request and detail-response forces nullable soup and accidental over-posting. Duplication of three properties is cheaper than a shared shape with divergent meanings.
+
+## Application service: the workflow owner
+
+Owns: use-case orchestration, transaction boundary (one `SaveChanges`/transaction per use case, at the end), authorization decisions on domain data, publishing events. Takes commands/queries or primitives, returns DTOs or results - never `IQueryable`, never tracked entities to the caller.
+
+Reject in services:
+- `HttpContext`, `IHttpContextAccessor` for anything but an abstracted `ICurrentUser`. The service layer must be callable from a message consumer or test without HTTP.
+- Returning `IQueryable<T>`: it hands the caller an open connection and an unbounded query; the transaction/disposal semantics escape the layer. Compose queries inside; return materialized DTOs or a paged result.
+- Formatting concerns: no status codes, no `ProblemDetails`, no localization of API messages.
+
+## Repository / data layer
+
+Only if it earns its keep. A repository wrapping `DbSet` one-to-one (`GetById`, `Add`, generic `IRepository<T>`) is ceremony - EF's `DbContext` already is a unit of work + repository. Write repositories when they encapsulate real query logic (specifications, complex read models, multi-source aggregation) or when the domain layer must not reference EF. Whichever you pick, be consistent: services calling `DbContext` directly in half the codebase and repositories in the other half is worse than either.
+
+Data-layer rules regardless of pattern:
+- No business decisions - a method named `GetActivePayableOrders` encodes policy in a filter; the policy belongs above, or must be named and owned as a shared specification.
+- No `SaveChanges` sprinkled per-repository-call; the unit of work commits once per use case, else partial writes ship without transactions.
+
+## Cross-cutting placement
+
+- Input shape validation (required, range, format): FluentValidation/DataAnnotations at the boundary. Business invariants (credit limit, state transitions): domain/service layer. Do not duplicate business rules in boundary validators - they drift.
+- Mapping: explicit methods or Mapster/AutoMapper with `ProjectTo` for queries; if a mapping needs services or conditionals, it is logic - write it as code, not configuration.
+- Reference direction: API -> Application -> Domain <- Infrastructure. The domain project references nothing of yours. Any `using MyApp.Api.*` inside Application is an architecture bug regardless of whether it compiles.
