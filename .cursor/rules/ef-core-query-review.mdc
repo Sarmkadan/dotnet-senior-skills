@@ -1,0 +1,77 @@
+---
+description: Review EF Core LINQ queries for N+1, cartesian explosion, tracking overhead, client-side evaluation, and over-fetching. Use when writing or reviewing any code that queries a DbContext.
+globs: **/*.cs
+alwaysApply: false
+---
+
+# EF Core Query Review
+
+## N+1: lazy loading and loops over navigations
+
+```csharp
+// WRONG: 1 query for orders + N queries for customers
+var orders = await db.Orders.ToListAsync();
+foreach (var o in orders) Console.WriteLine(o.Customer.Name); // lazy-load per row
+```
+
+Fix with a projection, not an Include, when you only need a few fields:
+
+```csharp
+var rows = await db.Orders
+    .Select(o => new { o.Id, CustomerName = o.Customer.Name })
+    .ToListAsync(); // single query, single roundtrip
+```
+
+If lazy-loading proxies are enabled project-wide, treat every navigation access outside the query as a suspect. Prefer disabling lazy loading entirely; it converts silent N+1 into a visible exception.
+
+## Cartesian explosion with multiple collection Includes
+
+```csharp
+// WRONG: rows = orders x items x payments; 100 orders with 50 items and 10 payments = 50,000 rows
+var o = await db.Orders.Include(x => x.Items).Include(x => x.Payments).ToListAsync();
+```
+
+Two or more collection `Include`s on the same level multiply row counts. Use `AsSplitQuery()` (one query per collection, consistent only inside a transaction or with snapshot isolation) or split into separate targeted queries. One collection Include is fine; two is a review comment; three is a rejection.
+
+## Projection over materialization
+
+Materializing full entities to return a DTO is the most common over-fetch. `Select` into the DTO directly: EF translates it to a column list, skips change tracking, and avoids loading unmapped blobs.
+
+```csharp
+// WRONG
+var users = await db.Users.Include(u => u.Profile).ToListAsync();
+return users.Select(u => new UserDto(u.Id, u.Profile.AvatarUrl));
+// RIGHT
+return await db.Users.Select(u => new UserDto(u.Id, u.Profile.AvatarUrl)).ToListAsync();
+```
+
+## AsNoTracking
+
+Every read-only query path (GET endpoints, reports, exports) must be `AsNoTracking()` or a projection (projections are untracked automatically). Tracking cost is per-entity snapshot allocation and identity-map lookups; on a 10k-row report it dominates. Do not set `NoTrackingWithIdentityResolution` by reflex - only when the same principal repeats across rows and reference identity matters. Conversely: if the code later mutates the entity and calls `SaveChanges`, `AsNoTracking` silently does nothing - that is a bug, not a perf win.
+
+## Client-side evaluation
+
+EF Core throws on non-translatable expressions everywhere except the final `Select` - and that exception is your friend. The dangerous cases are the ones that do NOT throw:
+
+```csharp
+// WRONG: ToList() before Where pulls the whole table
+var active = db.Users.ToList().Where(u => IsActive(u));
+// WRONG: AsEnumerable mid-query does the same, quietly
+var page = db.Users.AsEnumerable().Skip(200).Take(20);
+```
+
+Any `ToList/AsEnumerable/ToArray` followed by more LINQ operators moves filtering into memory. Also flag calling instance methods or local functions inside `Where` - they force this pattern.
+
+## Pagination and counting
+
+- `Skip/Take` without `OrderBy` returns nondeterministic pages. Always order by a unique key (append `.ThenBy(x => x.Id)`).
+- Offset pagination past ~10k rows scans; use keyset (`WHERE (CreatedAt, Id) > (@lastCreated, @lastId)`) for infinite scroll.
+- `Count()` before fetching doubles roundtrips; if you need both, accept it explicitly or use a windowed `COUNT(*) OVER()` via raw SQL - do not call `.Count()` on a materialized list you fetched only for counting.
+
+## Checklist for any reviewed query
+
+- Filter (`Where`) and page (`Take`) in SQL, not memory.
+- Read-only: `AsNoTracking` or projection.
+- At most one collection Include per level, else `AsSplitQuery`.
+- No `Contains` over an unbounded in-memory list (parameter limit blowups; batch or use temp table/`OPENJSON`).
+- No queries inside loops - rewrite as one query with `Where(x => ids.Contains(x.Id))` or a join.

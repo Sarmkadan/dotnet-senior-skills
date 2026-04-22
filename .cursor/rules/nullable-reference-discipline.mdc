@@ -1,0 +1,63 @@
+---
+description: Enforce nullable reference type discipline in C# - annotation honesty, null-forgiveness audit, boundary validation, and EF Core interaction. Use when writing or reviewing C# code in nullable-enabled projects or migrating projects to nullable.
+globs: **/*.cs
+alwaysApply: false
+---
+
+# Nullable Reference Discipline
+
+## Baseline
+
+`<Nullable>enable</Nullable>` project-wide plus `<WarningsAsErrors>nullable</WarningsAsErrors>`. Warnings-as-suggestions rot in a week. For gradual migration, enable per-file with `#nullable enable` starting from the leaves (models, utilities) upward, and never add new files without it.
+
+## The annotation is a contract, not a wish
+
+- `string Name` means never null - and the type must make it true: initialized at construction (`required`, constructor parameter) or the annotation is a lie the compiler will now defend.
+- `string? Name` means callers MUST handle null. Do not add `?` to silence a warning when the value is logically always present - fix the initialization instead.
+
+```csharp
+// WRONG: lying to the compiler to make the warning go away
+public string Email { get; set; } = null!;
+// RIGHT: the contract is enforced at construction
+public required string Email { get; set; }
+```
+
+`= null!` is acceptable in exactly two places: EF Core navigation properties (materializer sets them) and DI-populated framework hooks. Each occurrence outside those needs a comment saying why.
+
+## Null-forgiving operator audit
+
+Every `!` is a claim: "I know more than the flow analysis." In review, verify the claim:
+- `dict[key]!` after `ContainsKey` - fine, but `TryGetValue` removes the need.
+- `FirstOrDefault()!` - almost always wrong; if absence is impossible use `First()` (fails loudly at the right place), if possible, handle it.
+- `!` on deserialized input (`JsonSerializer.Deserialize<T>(json)!`) - wrong: deserialization of `"null"` returns null; validate and throw a domain-meaningful error.
+
+Grep the diff for `!.` and `)!` - more than a couple per file means the types are misdesigned, usually a half-initialized object that needs a constructor or a factory.
+
+## Boundaries: annotations do not validate
+
+Nullable analysis is compile-time only. Data crossing a trust boundary (HTTP body, message queue, database, config) arrives unchecked:
+- Request DTOs: non-null annotation + `[Required]`/validator. ASP.NET Core model validation treats non-nullable reference properties as required by default - know this, because it produces 400s people then "fix" by adding `?` everywhere.
+- Public library APIs: keep `ArgumentNullException.ThrowIfNull(arg)` on entry points; your consumers may compile with nullable off.
+
+## EF Core interaction
+
+- Non-nullable property => NOT NULL column; `string?` => NULL. Check migrations after annotation changes - adding `?` is a schema change.
+- Required navigation: `public Customer Customer { get; set; } = null!;` - and remember it is still null when the entity was loaded without Include; the annotation does not load data. A `NullReferenceException` on a "non-nullable" navigation means a missing Include or projection, not a data bug.
+- Optional relationship: both FK and navigation nullable (`int? CustomerId`, `Customer? Customer`), and they must agree - a non-nullable navigation over a nullable FK misleads every reader.
+
+## Patterns to prefer
+
+- `is null` / `is not null` over `== null` (bypasses operator overloads, reads as intent).
+- Early return over nested null checks; after `if (x is null) return;` flow analysis promotes `x` for the rest of the method.
+- `[NotNullWhen(true)]`, `[MemberNotNull(nameof(_field))]` on Try-patterns and init helpers so callers do not need `!`:
+
+```csharp
+public bool TryGetUser(int id, [NotNullWhen(true)] out User? user)
+```
+
+- `??` with a throw for impossible states: `var user = cache.Get(id) ?? throw new InvalidOperationException($"User {id} evicted mid-request");` - fails at the assumption, not three frames later.
+
+## What not to do
+
+- Do not blanket-`?` a legacy codebase to make it compile; that erases the information the feature exists to capture.
+- Do not null-check parameters the annotation already guarantees inside private/internal code - checks belong at trust boundaries, not on every frame.

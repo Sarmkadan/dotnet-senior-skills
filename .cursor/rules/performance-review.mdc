@@ -1,0 +1,49 @@
+---
+description: Review .NET code for allocation pressure, string handling, Span/pooling opportunities, LINQ costs, and caching - with explicit guidance on when performance work is and is not justified. Use when reviewing hot paths, optimizing .NET code, or evaluating performance claims.
+globs: **/*.cs
+alwaysApply: false
+---
+
+# Performance Review (.NET)
+
+## First: does this code path earn optimization?
+
+Optimize code that is (a) per-request or per-item in a hot loop, and (b) shown hot by a profiler or allocation trace - `dotnet-trace`, `dotnet-counters`, PerfView, or a BenchmarkDotNet micro-benchmark for the disputed snippet. Reject performance PRs justified by vibes, and equally reject "premature optimization" as an excuse for gratuitous waste in known-hot paths (serializers, middleware, per-row parsing). Startup code, admin endpoints, and once-a-day jobs get readability, not Spans.
+
+The usual ranking of real wins: eliminate I/O (N+1, chatty HTTP, missing cache) >> reduce allocations >> micro-optimize CPU. A `Span<T>` refactor is noise next to an uncached per-request database call.
+
+## Allocation review flags
+
+- **Closures in hot paths**: a lambda capturing locals allocates a closure object per call. Use static lambdas with state parameters where the API offers them: `ConcurrentDictionary.GetOrAdd(key, static (k, arg) => Create(k, arg), arg)`.
+- **LINQ in per-item loops**: each chained operator allocates an enumerator/iterator. `items.Where(...).Select(...).ToList()` once per request is fine; inside a loop over 100k rows, write the `foreach`. Also `Any()` on an `ICollection` - use `.Count > 0` (no enumerator).
+- **params / interface enumeration**: `params object[]` allocates an array per call (logging!); `foreach` over `IEnumerable<T>` boxes the enumerator when the concrete type's is a struct - iterate the concrete `List<T>` in hot code.
+- **Boxing**: value types passed as `object`/non-generic interfaces, string interpolation of structs into loggers. Use structured logging templates - `_logger.LogInformation("Order {Id}", id)` - which also skip formatting entirely when the level is off; interpolated `$"..."` pays even when filtered. Wrap expensive log-value computation in `if (_logger.IsEnabled(LogLevel.Debug))`.
+
+## Strings
+
+- Concatenation in a loop is O(n^2): `StringBuilder`, or `string.Create` when the final length is known.
+- Parsing/slicing hot text: `ReadOnlySpan<char>` + `span.Slice`/`IndexOf` instead of `Substring` chains - zero allocations vs one string per slice. `int.Parse(span)` overloads exist for exactly this.
+- Case-insensitive compare: `string.Equals(a, b, StringComparison.OrdinalIgnoreCase)`, never `a.ToLower() == b.ToLower()` (two allocations plus culture pitfalls).
+
+## Span, Memory, pooling
+
+- `Span<T>`/`stackalloc` for small (<=1KB) transient buffers in synchronous code. `Span` cannot live across `await`; use `Memory<T>` there.
+- `ArrayPool<T>.Shared.Rent` for large transient buffers (I/O, encoding). Always return in `finally`, never return a buffer you still reference, and remember rented arrays are not cleared and may be oversized - use the length you asked for, not `.Length`.
+- Repeated serialization targets: `RecyclableMemoryStream` or pooled `IBufferWriter<byte>` instead of `new MemoryStream()` per message.
+- Structs: fine and beneficial small (<= ~16-24 bytes) and readonly; large mutable structs copied through method calls are a deoptimization. `readonly struct` prevents defensive copies under `in`.
+
+## Collections and data
+
+- Pre-size when count is known: `new List<T>(count)`, `new Dictionary<K,V>(count)` - growth is repeated array copies.
+- Lookup in a loop over another collection: build a `Dictionary`/`HashSet` first; `list.Contains` inside `Where` is the in-memory N+1.
+- `IEnumerable<T>` returned and enumerated twice re-executes the pipeline (or the query). Materialize once at the decision point.
+
+## Caching (the actual big lever)
+
+- `IMemoryCache` for per-instance hot reference data; set size limits or explicit expirations - an unbounded cache is a memory leak with a nicer name.
+- Cache stampede: on expiry of a popular key, N concurrent requests all recompute. .NET 9+ `HybridCache` handles this (built-in stampede protection, plus L1/L2); otherwise a per-key semaphore/`Lazy<Task<T>>` pattern.
+- Cache DTOs/immutable objects, never tracked EF entities (they capture a disposed context and cross-request state).
+
+## Verify, then merge
+
+Any PR claiming a performance improvement includes the before/after evidence: BenchmarkDotNet table for micro, or trace/latency numbers for macro. "Should be faster" is not a review artifact.
