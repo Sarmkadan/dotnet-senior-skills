@@ -39,7 +39,7 @@ migrationBuilder.Sql("UPDATE Orders SET Region = 'EU' WHERE Region IS NULL");
 migrationBuilder.AlterColumn<string>("Region", "Orders", nullable: false);
 ```
 
-Dropping a column: release 1 removes all reads/writes from code (keep the property mapped or use `[NotMapped]` after unmapping in `OnModelCreating`), release 2 drops the column. A one-release drop breaks the still-running old instances.
+Dropping a column: release 1 removes every read and write of the property but keeps it mapped, so old and new app versions both run against the existing column; release 2 removes the property from the model and ships the `DropColumn` migration. A one-release drop breaks the still-running old instances.
 
 ## NOT NULL with defaultValue on big tables
 

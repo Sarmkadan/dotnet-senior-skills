@@ -1,6 +1,30 @@
 # dotnet-senior-skills
 
-Opinionated, senior-level .NET review and coding rules for AI coding agents - the things an experienced architect actually flags in code review, with concrete before/after C#. Shipped in three formats from one source: Claude Code skills, Cursor rules, and Copilot instructions.
+Senior-level .NET code-review rules that coding agents (Claude Code, Cursor, GitHub Copilot) load automatically.
+
+Agents write plausible C# that a senior rejects in review: captive dependencies, three collection Includes, async void, entities leaking through the API boundary. These 12 skills encode the rejections - with hard thresholds and before/after C#, not principles.
+
+## Install
+
+One command, from a clone, into your project:
+
+```sh
+git clone https://github.com/Sarmkadan/dotnet-senior-skills
+./dotnet-senior-skills/install.sh /path/to/your/project
+```
+
+Or per tool:
+
+```sh
+# Claude Code
+cp -r dotnet-senior-skills/skills/. your-project/.claude/skills/
+# Cursor
+cp dotnet-senior-skills/.cursor/rules/*.mdc your-project/.cursor/rules/
+# GitHub Copilot
+cp dotnet-senior-skills/.github/copilot-instructions.md your-project/.github/
+```
+
+## Skills
 
 | Skill | Covers |
 | --- | --- |
@@ -8,13 +32,29 @@ Opinionated, senior-level .NET review and coding rules for AI coding agents - th
 | [ef-core-query-review](skills/ef-core-query-review/SKILL.md) | N+1, cartesian explosion, AsNoTracking, projection, client-side eval |
 | [async-await-pitfalls](skills/async-await-pitfalls/SKILL.md) | Sync-over-async, async void, ValueTask, CancellationToken flow |
 | [api-layer-boundaries](skills/api-layer-boundaries/SKILL.md) | Controller/service/repository responsibilities, DTO vs entity leakage |
-| [solid-review-checklist](skills/solid-review-checklist/SKILL.md) | SOLID as concrete C# review triggers, not definitions |
+| [dependency-injection-lifetimes](skills/dependency-injection-lifetimes/SKILL.md) | Captive dependencies, scopes in singletons, HttpClient registration |
 | [nullable-reference-discipline](skills/nullable-reference-discipline/SKILL.md) | Annotation honesty, null-forgiveness audit, EF interaction |
 | [exception-and-result-strategy](skills/exception-and-result-strategy/SKILL.md) | Throw vs Result, catch rules, what never to swallow |
-| [dependency-injection-lifetimes](skills/dependency-injection-lifetimes/SKILL.md) | Captive dependencies, scopes in singletons, HttpClient registration |
+| [solid-review-checklist](skills/solid-review-checklist/SKILL.md) | SOLID as concrete C# review triggers, not definitions |
 | [configuration-and-secrets](skills/configuration-and-secrets/SKILL.md) | Options pattern, startup validation, secret storage, layering |
 | [testing-strategy](skills/testing-strategy/SKILL.md) | What to test per layer, why mocking DbContext is a smell |
 | [performance-review](skills/performance-review/SKILL.md) | Allocations, spans, pooling, caching, when to care at all |
 | [security-review-dotnet](skills/security-review-dotnet/SKILL.md) | AuthZ vs authN, IDOR, mass assignment, SQL injection, deserialization |
 
-Install: Claude Code - copy `skills/` into your project's `.claude/skills/`. Cursor - copy `.cursor/rules/` into your repo. Copilot - copy `.github/copilot-instructions.md`.
+## Sample rules
+
+Verbatim from the skill files - this is the level of specificity throughout:
+
+> Two or more collection `Include`s on the same level multiply row counts. Use `AsSplitQuery()` [...] or split into separate targeted queries. One collection Include is fine; two is a review comment; three is a rejection.
+
+> A service must not depend on anything with a SHORTER lifetime. Singleton -> Scoped is the captive dependency: the singleton captures the first scope's instance forever. [...] Symptoms in production: `ObjectDisposedException: Cannot access a disposed context`, cross-request data bleed.
+
+> Old app code and new schema coexist during a rolling deploy. Never ship a migration the *previous* app version cannot run against.
+
+> An empty catch block is a rejection, no discussion. Minimum viable swallow is `catch (SpecificException ex) { _logger.LogWarning(ex, "context, deliberately ignored because X"); }` - the "because X" is mandatory.
+
+> Flag a SOLID issue only with the concrete cost attached: "this switch is duplicated in X and Y, next format touches both" - not "violates OCP". If you cannot name the cost, it is not a finding.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
