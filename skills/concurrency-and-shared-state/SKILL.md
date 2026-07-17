@@ -1,0 +1,63 @@
+---
+name: concurrency-and-shared-state
+description: Review .NET concurrency - lock discipline, Interlocked, concurrent collections, SemaphoreSlim for async mutual exclusion, Channels, and Parallel.ForEachAsync. Use when reviewing shared mutable state, locks, or parallel code.
+---
+
+# Concurrency and Shared State
+
+## First question: does this state need to be shared?
+
+Most "how do I lock this" reviews end with removing the shared state: make the service scoped instead of singleton, pass values through the call chain, or use immutable snapshots. A singleton with mutable fields is guilty until proven thread-safe - and "proven" means every access site audited, not "it hasn't crashed yet". Races surface under production load as corrupted state, not as test failures.
+
+## lock discipline
+
+```csharp
+// WRONG: check and act are separate; two threads both pass the check
+if (!_cache.ContainsKey(key)) { _cache[key] = Create(key); }
+// RIGHT: the whole read-modify-write under one lock (or use ConcurrentDictionary.GetOrAdd)
+lock (_gate) { if (!_cache.TryGetValue(key, out var v)) { v = Create(key); _cache[key] = v; } }
+```
+
+- Lock object: `private readonly Lock _gate = new();` (.NET 9+) or `private readonly object _gate = new();`. Never `lock (this)`, `lock (typeof(X))`, or lock on a string - all reachable by other code, all deadlock bait.
+- Hold locks for nanoseconds, not milliseconds: no I/O, no callbacks, no unknown virtual calls inside a lock. A lock around an HTTP call serializes your whole service.
+- `await` inside `lock` does not compile - and the workaround people reach for (`Monitor.Enter` manually) is broken, because the continuation resumes on a different thread that does not own the monitor. Async mutual exclusion is `SemaphoreSlim(1, 1)`:
+
+```csharp
+await _semaphore.WaitAsync(ct);
+try { await RefreshAsync(ct); }
+finally { _semaphore.Release(); }
+```
+
+- Two locks acquired in different orders in different methods is the textbook deadlock. If you need two, define and document a global order; better, restructure to one.
+
+## Interlocked and volatile
+
+- Counters: `Interlocked.Increment(ref _count)`, not `_count++` (read-modify-write, loses updates) and not `lock` (overkill). Read with `Interlocked.Read`/`Volatile.Read` on the same field family.
+- `volatile` is not a lock and not for counters - it orders reads/writes of a single field. If you are reasoning about fences to justify lock-free code outside a measured hot path, stop and take the lock; the review cost of clever memory-model code exceeds its benefit almost everywhere.
+- Lazy one-time init: `Lazy<T>` or `LazyInitializer.EnsureInitialized`, not hand-rolled double-checked locking.
+
+## Concurrent collections
+
+- `ConcurrentDictionary`: `GetOrAdd`/`AddOrUpdate` are atomic per key, but the `valueFactory` may run multiple times concurrently (only one result wins). Factory with side effects (opens a connection, increments a counter): wrap the value in `Lazy<T>` - `GetOrAdd(key, k => new Lazy<T>(() => Create(k))).Value`.
+- Iterating a concurrent collection gives a moving snapshot - `Count` then `foreach` can disagree. Do not build invariants across multiple calls; each call is atomic, the sequence is not.
+- `List<T>` + `lock` beats `ConcurrentBag<T>` in almost every real case; `ConcurrentBag` is for same-thread-mostly producer-consumer and its unordered semantics surprise everyone.
+
+## Producer-consumer: Channel<T>
+
+Queue work between components with `System.Threading.Channels`, not `BlockingCollection` (blocks threads) or a hand-rolled `Queue` + lock + event:
+
+```csharp
+var channel = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(1000)
+    { FullMode = BoundedChannelFullMode.Wait });
+// producer: await channel.Writer.WriteAsync(item, ct);
+// consumer: await foreach (var item in channel.Reader.ReadAllAsync(ct)) { ... }
+```
+
+Bounded, always - an unbounded channel is an unbounded memory leak when the consumer falls behind. `FullMode` is a deliberate backpressure decision: `Wait` (slow the producer), `DropOldest`/`DropWrite` (shed load) - pick per use case, in review.
+
+## Parallelism
+
+- CPU-bound batch over a collection: `Parallel.ForEachAsync(items, new ParallelOptions { MaxDegreeOfParallelism = n, CancellationToken = ct }, ...)`. Unbounded `Task.WhenAll(items.Select(DoAsync))` over 10k items fires 10k concurrent operations at your database or HTTP dependency - that is a self-inflicted DoS, not parallelism. Bound it (ForEachAsync, or `SemaphoreSlim` around the body).
+- `Parallel.For`/`PLINQ` are for CPU-bound sync work only; feeding them async lambdas produces async void (exceptions escape, work outruns the loop).
+- No parallelism inside a request handler for sub-100ms work - the thread coordination costs more than it saves, and it steals pool threads from other requests. Parallel work belongs in background jobs and batch processing.
+- Shared `DbContext`, `HttpContext`, or any scoped service captured by parallel bodies: rejection. Each parallel unit resolves its own scope.
