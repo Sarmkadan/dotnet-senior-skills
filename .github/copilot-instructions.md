@@ -71,3 +71,81 @@ Condensed rules for this codebase. Full versions with rationale and examples liv
 - Raw SQL only via `FromSql`/interpolated parameter forms or explicit parameters; identifiers via allowlist. `FromSqlRaw` with concatenation is rejected.
 - No `BinaryFormatter`; no polymorphic deserialization driven by type names in untrusted input. Uploads: allowlist content, server-generated names, never trust client paths.
 - Passwords only through Identity/`PasswordHasher<T>`. No tokens/passwords in logs.
+
+## Time
+
+- `DateTimeOffset` for instants (stored UTC), `DateOnly` for calendar dates, local time + IANA timezone id for future local events. Never `DateTime.Now` in server code.
+- Inject `TimeProvider` for any logic branching on "now"; read the clock once per operation. Elapsed time via `Stopwatch`/`GetTimestamp`, never subtracting wall-clock reads.
+- Convert to user timezones only at the presentation edge; no arithmetic on local times across DST. Schedule recurring jobs in UTC or with an explicit DST policy.
+
+## Disposal
+
+- Creator disposes (`using`/`await using`); injected disposables belong to the container - never dispose them, and don't implement `IDisposable` just to dispose injected fields.
+- Prefer `IAsyncDisposable` when cleanup does I/O; no `GetAwaiter().GetResult()` bridges in `Dispose`.
+- No finalizers on managed-only classes; unmanaged handles via `SafeHandle`. `Dispose` is idempotent and never throws.
+
+## Logging
+
+- Message templates with PascalCase placeholders, never interpolated strings into loggers. Exception object as the first argument; log each exception at exactly one boundary.
+- Levels: 1-2 Information lines per successful request; Warning only if actionable; every Error is a potential alert. No secrets, tokens, or destructured DTOs carrying credentials in logs.
+- `BeginScope` for ambient ids; `[LoggerMessage]` source-gen on hot paths; counters via `Meter`, not log-grepping.
+
+## Concurrency
+
+- Prefer removing shared mutable state over locking it. `lock` on a private readonly gate; no I/O inside locks; async mutual exclusion via `SemaphoreSlim(1,1)`.
+- Counters via `Interlocked`; one-time init via `Lazy<T>`. `ConcurrentDictionary.GetOrAdd` factories may race - wrap side-effecting factories in `Lazy<T>`.
+- Producer-consumer via bounded `Channel<T>` with a deliberate `FullMode`. Batch parallelism via `Parallel.ForEachAsync` with explicit `MaxDegreeOfParallelism` - never unbounded `Task.WhenAll` over large collections.
+
+## Background work
+
+- `ExecuteAsync` loops catch per iteration, filter `OperationCanceledException` on shutdown, and never let one failure end the loop. `PeriodicTimer` loops, not `System.Threading.Timer` callbacks.
+- One `IServiceScope` per unit of work; honor `stoppingToken` at every await; non-cancellable commit phases use `CancellationToken.None` explicitly.
+- Queue consumers: ack after commit, idempotent handlers, bounded retry then dead-letter. Work that must survive restarts goes through an outbox/durable queue, not an in-memory channel.
+
+## Serialization
+
+- One shared `JsonSerializerOptions` instance; `new JsonSerializerOptions` outside composition is a bug. Enums as strings; `required` on mandatory contract fields.
+- Contract changes are additive (expand/contract); property renames break stored payloads. Polymorphism via `[JsonPolymorphic]` allow-listed discriminators - never type names from input.
+- Stream large payloads (`SerializeAsync`/`ReadFromJsonAsync`), don't buffer strings. Money and >2^53 ids as strings for JS consumers.
+
+## Outbound HTTP
+
+- Clients only via `IHttpClientFactory` typed clients, explicit `Timeout` (never the 100s default), caller's `CancellationToken` flowed into every send.
+- Retries via resilience handlers: idempotent requests only (POST needs idempotency keys), 2-3 attempts, exponential backoff with jitter, honor `Retry-After`; circuit breaker with a decided fallback.
+- Read error bodies before throwing; `ResponseHeadersRead` for large downloads; one client class per third-party API owning DTOs and error translation.
+
+## Domain modeling
+
+- Wrap primitives when they carry rules or get confused with neighbors (money, ids, email) - validated in the constructor, one place. Invariants enforced in constructors/methods, not settable properties; state transitions as methods.
+- `record` for value objects and DTOs; classes for entities with identity. Exhaustive switch expressions without `default` on domain enums; `Enum.IsDefined` on client input.
+- Flag: bool parameters, nullable-pair state machines (`ShippedAt != null` = shipped), public `List<T>` properties on entities.
+
+## EF transactions and concurrency
+
+- One use case = one `SaveChanges`; explicit transactions only for multi-save units. No ceremony transactions around a single `SaveChanges`.
+- Read-modify-write on contended rows needs a rowversion concurrency token that round-trips through the client; `DbUpdateConcurrencyException` is a domain outcome with a decided policy (usually 409).
+- Prefer atomic `ExecuteUpdateAsync` with guarded predicates and unique indexes over check-then-act. `EnableRetryOnFailure` + manual transactions require `CreateExecutionStrategy`, with no side effects inside the retried block.
+
+## Collections and equality
+
+- Return `IReadOnlyList<T>`/`IReadOnlyCollection<T>`; `IEnumerable<T>` only for genuinely lazy sequences; never null for empty. Entities expose read-only views with mutation methods.
+- Override `Equals` and `GetHashCode` together via `IEquatable<T>` + `HashCode.Combine`, or use a record. Hash-relevant fields of dictionary/set keys are immutable.
+- Build dictionaries before loops instead of `First(x => x.Id == id)` per iteration. String-keyed structures and LINQ set operators state their comparer explicitly.
+
+## Pipeline order
+
+- ExceptionHandler -> HTTPS -> StaticFiles -> Routing -> CORS -> Authentication -> Authorization -> endpoints. Authorization after authentication, CORS before auth, exception handler first - always.
+- Endpoint-aware logic in filters/policies, not path-prefix checks in middleware. Scoped services as `InvokeAsync` parameters, never middleware constructor injection.
+- `EnableBuffering` before reading request bodies; no response writes after `HasStarted`. Rate limiting on auth endpoints; liveness probes don't check dependencies.
+
+## Culture
+
+- Machine-boundary data (files, URLs, protocols, parsed logs): `InvariantCulture` on every Parse/ToString/Format. Human-facing text: an explicitly resolved culture. CA1305 at least as warning.
+- Identifiers compare with `StringComparison.Ordinal`/`OrdinalIgnoreCase`; never `ToLower()` for comparison (Turkish-I bypasses). `IndexOf/StartsWith(string)` are culture-sensitive by default - specify.
+- Exception messages and logs in invariant English; localize at the presentation edge from resource keys; ship ISO dates and raw numbers, format at the glass.
+
+## Memory
+
+- Long-lived state answers "what removes entries?" - bound every cache, dispose timers and CTS registrations, unsubscribe events symmetrically (`-=` in Dispose); no `static event` subscribers from shorter-lived objects.
+- Lambdas stored long-term capture their enclosing scope - extract the field, capture the minimum. Every `TaskCompletionSource` has a guaranteed completion path.
+- Diagnose with dotnet-counters + gcdump diffs before patching; leak = Gen2/LOH growth across collections, not rising working set. `GC.Collect()` in app code is rejected; leak fixes ship with before/after evidence.
