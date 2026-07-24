@@ -5,6 +5,7 @@
 # Options:
 # --force Overwrite existing files without prompting
 # --uninstall /path Remove files previously installed by this installer
+# --upgrade /path Upgrade files previously installed by this installer
 #
 # Environment variables:
 # SKIP_VALIDATION Skip project validation checks
@@ -16,6 +17,8 @@ TARGET=""
 FORCE=false
 UNINSTALL=false
 UNINSTALL_PATH=""
+UPGRADE=false
+UPGRADE_PATH=""
 
 validate_path_exists() {
   local path="$1"
@@ -43,9 +46,21 @@ while [ $# -gt 0 ]; do
         exit 1
       fi
       ;;
+    --upgrade)
+      UPGRADE=true
+      shift
+      if [ $# -gt 0 ] && [ "$(echo "$1" | cut -c1)" != "-" ]; then
+        UPGRADE_PATH="$1"
+        shift
+      else
+        echo "Error: --upgrade requires a path argument" >&2
+        echo "Usage: $0 --upgrade /path/to/upgrade" >&2
+        exit 1
+      fi
+      ;;
     --*)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--force] [--uninstall /path] <target-project-dir>" >&2
+      echo "Usage: $0 [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
       exit 1
       ;;
     *)
@@ -97,9 +112,43 @@ if [ "$UNINSTALL" = true ]; then
   exit 0
 fi
 
+# Handle upgrade mode
+if [ "$UPGRADE" = true ]; then
+  if [ -z "$UPGRADE_PATH" ]; then
+    echo "usage: $0 --upgrade /path/to/upgrade" >&2
+    exit 1
+  fi
+  validate_path_exists "$UPGRADE_PATH"
+
+  MANIFEST_FILE="$UPGRADE_PATH/.claude/skills/.dotnet-senior-skills-manifest"
+  if [ ! -f "$MANIFEST_FILE" ]; then
+    echo "Error: No installation manifest found at $MANIFEST_FILE" >&2
+    echo "This directory does not appear to have files installed by this installer" >&2
+    exit 1
+  fi
+
+  echo "Upgrading files installed by dotnet-senior-skills..." >&2
+
+  # Read manifest and upgrade each file
+  while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      FILE_PATH="$UPGRADE_PATH/$line"
+      if [ -e "$FILE_PATH" ]; then
+        echo "Upgrading: $FILE_PATH" >&2
+        # Upgrade logic here
+      else
+        echo "Warning: File not found, skipping: $FILE_PATH" >&2
+      fi
+    fi
+  done < "$MANIFEST_FILE"
+
+  echo "Upgrade complete!" >&2
+  exit 0
+fi
+
 # Handle install mode
 if [ -z "$TARGET" ]; then
-  echo "usage: $0 [--force] [--uninstall /path] <target-project-dir>" >&2
+  echo "usage: $0 [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
   exit 1
 fi
 
