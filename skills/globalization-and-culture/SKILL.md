@@ -1,13 +1,15 @@
----
+--- 
 name: globalization-and-culture
-description: Review .NET culture-sensitivity bugs - parsing and formatting with invariant vs current culture, string comparison choices, the Turkish-I problem, and localization boundaries. Use when reviewing Parse/ToString/string comparison code or anything formatting numbers and dates.
+2 description: Review .NET culture-sensitivity bugs - parsing and formatting with invariant vs current culture, string comparison choices, the Turkish-I problem, and localization boundaries. Use when reviewing Parse/ToString/string comparison code or anything formatting numbers.
 ---
+
+**See also:** [datetime-and-time-handling](datetime-and-time-handling) for culture-aware date/time parsing and formatting rules.
 
 # Globalization and Culture
 
-## The default is a landmine
+## Culture-sensitive parsing and formatting
 
-`double.Parse`, `decimal.ToString`, `DateTime.Parse`, `string.Format`, and interpolation all default to `CultureInfo.CurrentCulture` - the culture of the thread, which in a server means "whatever the OS image or a stray configuration set". Code that works on the developer's en-US machine and corrupts data on a de-DE server:
+`double.Parse`, `decimal.Parse`, `decimal.ToString`, `DateTime.Parse`, `string.Format`, and interpolation all default to `CultureInfo.CurrentCulture` - the culture of the thread, which in a server means "whatever the OS image or a stray configuration set". Code that works on the developer's en-US machine and corrupts data on a de-DE server:
 
 ```csharp
 // non-compiling: illustrative
@@ -23,6 +25,8 @@ var s = price.ToString(CultureInfo.InvariantCulture);
 The dividing rule: **data crossing a machine boundary** (files, protocols, URLs, database strings, config, logs meant for parsing) is `InvariantCulture`; **text rendered for a human eye** is the user's culture - explicitly resolved, not whatever the thread has. Any Parse/ToString/Format of numbers or dates with no `IFormatProvider` argument is a review question; enable CA1305 (specify IFormatProvider) as at least a warning to make the omissions visible.
 
 Interpolated strings crossing machine boundaries: `FormattableString.Invariant($"page={page}&price={price}")` or `string.Create(CultureInfo.InvariantCulture, $"...")` - a bare `$"..."` building a URL formats the decimal with the thread culture.
+
+For date/time-specific parsing and formatting rules, see the [datetime-and-time-handling](datetime-and-time-handling) skill.
 
 ## String comparison: say what you mean
 
@@ -44,4 +48,4 @@ The Turkish-I is the concrete failure: in tr-TR, `"INSERT".ToLower()` is `"ınse
 
 - Exception messages, log templates, and internal errors: English, invariant, never localized - logs get grepped, not read by end users. User-visible text is translated at the presentation edge from resource keys; a domain layer throwing localized exception messages has mixed presentation into domain.
 - Error codes over prose across the API boundary (exception skill) - the frontend localizes `order_out_of_stock`; it cannot localize a server-composed English sentence.
-- Dates/numbers rendered client-side (JS `Intl`, mobile) beat server-side rendering into strings - ship ISO 8601 and raw numbers in the payload, format at the glass (see serialization skill).
+- Numbers rendered client-side (JS `Intl`, mobile) beat server-side rendering into strings - ship raw numbers in the payload, format at the glass (see serialization skill).

@@ -1,6 +1,8 @@
 # datetime-and-time-handling
 
-Review .NET date/time code - DateTime vs DateTimeOffset, UTC discipline, TimeProvider for testability, timezone conversion, and scheduling pitfalls. Use when reviewing any code that touches DateTime, DateTimeOffset, timestamps, or scheduling.
+Review .NET date/time code - DateTime vs DateTimeOffset, UTC discipline, TimeProvider for testability, timezone conversion, and scheduling pitfalls. Also covers culture-aware parsing/formatting of date/time values. Use when reviewing any code that touches DateTime, DateTimeOffset, timestamps, scheduling, or culture-sensitive date/time operations.
+
+**See also:** globalization-and-culture for culture-sensitive parsing/formatting rules and string comparison guidelines.
 
 ## DateTimeOffset by default
 

@@ -1,6 +1,8 @@
 # globalization-and-culture
 
-Review .NET culture-sensitivity bugs - parsing and formatting with invariant vs current culture, string comparison choices, the Turkish-I problem, and localization boundaries. Use when reviewing Parse/ToString/string comparison code or anything formatting numbers and dates.
+Review .NET culture-sensitivity bugs - parsing and formatting with invariant vs current culture, string comparison choices, the Turkish-I problem, and localization boundaries. Use when reviewing Parse/ToString/string comparison code or anything formatting numbers.
+
+**See also:** datetime-and-time-handling for culture-aware date/time parsing and formatting rules.
 
 ## The default is a landmine
 

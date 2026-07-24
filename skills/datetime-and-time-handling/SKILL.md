@@ -1,7 +1,10 @@
----
+--- 
 name: datetime-and-time-handling
-description: Review .NET date/time code - DateTime vs DateTimeOffset, UTC discipline, TimeProvider for testability, timezone conversion, and scheduling pitfalls. Use when reviewing any code that touches DateTime, DateTimeOffset, timestamps, or scheduling.
+2 description: Review .NET date/time code - DateTime vs DateTimeOffset, UTC discipline, TimeProvider for testability, timezone conversion, and scheduling pitfalls. Also covers culture-aware parsing/formatting of date/time values.
+Use when reviewing any code that touches DateTime, DateTimeOffset, timestamps, scheduling, or culture-sensitive date/time operations.
 ---
+
+**See also:** [globalization-and-culture](globalization-and-culture) for culture-sensitive parsing/formatting rules and string comparison guidelines.
 
 # DateTime and Time Handling
 
@@ -24,6 +27,10 @@ Decision table:
 - **Future local events** (a meeting at "10:00 Sofia time" next March): store local time + IANA timezone id, convert at read time. Pre-converting to UTC bakes in today's offset rules; a DST law change makes the stored instant wrong.
 
 Review flag: `DateTime.Now` anywhere in server code. Server-local time depends on the box's timezone; two instances in different regions disagree. `DateTime.UtcNow` is acceptable in legacy code; new code uses `DateTimeOffset.UtcNow` - via `TimeProvider` (below).
+
+**Rule:** Data crossing a machine boundary (files, protocols, URLs, database strings, config) uses `CultureInfo.InvariantCulture`; text rendered for human eyes uses the user's culture.
+
+For culture-aware parsing and formatting rules, including how to handle date/time parsing with explicit culture specification, see the [globalization-and-culture](globalization-and-culture) skill.
 
 ## TimeProvider: the clock is a dependency
 
