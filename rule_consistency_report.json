@@ -1,0 +1,356 @@
+{
+  "timestamp": "2026-07-26",
+  "skills": {
+    "serialization-review": {
+      "skill_name": "serialization-review",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 4,
+          "line_count": 95,
+          "meaningful_line_count": 82,
+          "size_bytes": 7745
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 2,
+          "line_count": 43,
+          "meaningful_line_count": 33,
+          "size_bytes": 5299
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 487
+        }
+      },
+      "issues": []
+    },
+    "http-resilience-and-outbound-calls": {
+      "skill_name": "http-resilience-and-outbound-calls",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 85,
+          "meaningful_line_count": 77,
+          "size_bytes": 7362
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 87,
+          "meaningful_line_count": 78,
+          "size_bytes": 7406
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 0,
+          "meaningful_line_count": 0,
+          "size_bytes": 0
+        }
+      },
+      "issues": []
+    },
+    "middleware-and-pipeline-order": {
+      "skill_name": "middleware-and-pipeline-order",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 2,
+          "line_count": 48,
+          "meaningful_line_count": 40,
+          "size_bytes": 5196
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 2,
+          "line_count": 50,
+          "meaningful_line_count": 41,
+          "size_bytes": 5260
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 532
+        }
+      },
+      "issues": []
+    },
+    "domain-modeling-and-primitives": {
+      "skill_name": "domain-modeling-and-primitives",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 48,
+          "meaningful_line_count": 39,
+          "size_bytes": 5357
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 49,
+          "meaningful_line_count": 39,
+          "size_bytes": 5327
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 537
+        }
+      },
+      "issues": []
+    },
+    "ef-core-transactions-and-concurrency": {
+      "skill_name": "ef-core-transactions-and-concurrency",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 54,
+          "meaningful_line_count": 46,
+          "size_bytes": 5019
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 55,
+          "meaningful_line_count": 46,
+          "size_bytes": 5050
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 570
+        }
+      },
+      "issues": []
+    },
+    "concurrency-and-shared-state": {
+      "skill_name": "concurrency-and-shared-state",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 46,
+          "meaningful_line_count": 37,
+          "size_bytes": 5047
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 47,
+          "meaningful_line_count": 37,
+          "size_bytes": 5019
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 535
+        }
+      },
+      "issues": []
+    },
+    "background-work-and-hosted-services": {
+      "skill_name": "background-work-and-hosted-services",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 7,
+          "line_count": 192,
+          "meaningful_line_count": 178,
+          "size_bytes": 10809
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 7,
+          "line_count": 193,
+          "meaningful_line_count": 178,
+          "size_bytes": 10839
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 0,
+          "meaningful_line_count": 0,
+          "size_bytes": 0
+        }
+      },
+      "issues": []
+    },
+    "logging-and-observability": {
+      "skill_name": "logging-and-observability",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 5,
+          "line_count": 187,
+          "meaningful_line_count": 172,
+          "size_bytes": 9453
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 5,
+          "line_count": 188,
+          "meaningful_line_count": 172,
+          "size_bytes": 9409
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 480
+        }
+      },
+      "issues": []
+    },
+    "memory-leaks-and-diagnostics": {
+      "skill_name": "memory-leaks-and-diagnostics",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 37,
+          "meaningful_line_count": 29,
+          "size_bytes": 5369
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 38,
+          "meaningful_line_count": 29,
+          "size_bytes": 5341
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 598
+        }
+      },
+      "issues": []
+    },
+    "datetime-and-time-handling": {
+      "skill_name": "datetime-and-time-handling",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 5,
+          "line_count": 88,
+          "meaningful_line_count": 77,
+          "size_bytes": 6064
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 2,
+          "line_count": 45,
+          "meaningful_line_count": 36,
+          "size_bytes": 5031
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 507
+        }
+      },
+      "issues": []
+    },
+    "disposal-and-resource-lifetime": {
+      "skill_name": "disposal-and-resource-lifetime",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 62,
+          "meaningful_line_count": 54,
+          "size_bytes": 4820
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 3,
+          "line_count": 63,
+          "meaningful_line_count": 54,
+          "size_bytes": 4790
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 401
+        }
+      },
+      "issues": []
+    },
+    "globalization-and-culture": {
+      "skill_name": "globalization-and-culture",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 35,
+          "meaningful_line_count": 28,
+          "size_bytes": 5396
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 35,
+          "meaningful_line_count": 27,
+          "size_bytes": 5200
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 556
+        }
+      },
+      "issues": []
+    },
+    "collections-and-equality": {
+      "skill_name": "collections-and-equality",
+      "formats": {
+        "SKILL.md": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 36,
+          "meaningful_line_count": 28,
+          "size_bytes": 4930
+        },
+        "mdc": {
+          "exists": true,
+          "code_blocks": 1,
+          "line_count": 37,
+          "meaningful_line_count": 28,
+          "size_bytes": 4906
+        },
+        "copilot": {
+          "exists": true,
+          "code_blocks": 0,
+          "line_count": 5,
+          "meaningful_line_count": 3,
+          "size_bytes": 514
+        }
+      },
+      "issues": []
+    }
+  }
+}
