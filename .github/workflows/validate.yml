@@ -137,3 +137,17 @@ EOF
       - name: Cleanup
         if: always()
         run: rm -rf /tmp/csharp-samples
+- name: Validate README table matches generated content
+  run: |
+    # Generate the table from skill frontmatter
+    ./scripts/gen-readme-table.sh
+
+    # Check if README was modified
+    if git diff --quiet README.md; then
+      echo "✓ README table is up to date"
+    else
+      echo "ERROR: README.md was modified by gen-readme-table.sh - commit the changes or fix the generator"
+      echo "Changes:"
+      git diff README.md
+      exit 1
+    fi
