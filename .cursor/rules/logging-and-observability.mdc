@@ -48,6 +48,184 @@ Passwords, tokens, API keys, connection strings, full card numbers, session cook
 
 Mark sensitive fields un-loggable structurally (redacting destructuring policies, `[LogPropertyIgnore]` with the source-generated logger) rather than relying on authors remembering.
 
+### Secrets redaction rules
+
+Never log full DTOs/entities via structured logging destructuring (`{@Entity}`) without explicit redaction. Always use:
+- `[JsonIgnore]` or `[LogPropertyIgnore]` attributes on sensitive properties
+- Explicit allowlists of safe properties
+- Source-generated logger with property filtering
+- Manual redaction before logging
+
+#### Never log raw DTOs with secrets
+
+```csharp
+// non-compiling: illustrative
+
+// WRONG: Logging full request DTO exposes API keys, passwords, tokens
+public record CreateUserRequest(string Username, string Password, string ApiKey);
+
+public class UserController : ControllerBase
+{
+    private readonly ILogger<UserController> _logger;
+
+    public UserController(ILogger<UserController> logger)
+    {
+        _logger = logger;
+    }
+
+    [HttpPost("register")]
+    public IActionResult Register(CreateUserRequest request)
+    {
+        // Secret data logged: Password and ApiKey appear in logs
+        _logger.LogInformation("Creating user {@Request}", request);
+
+        // ... create user ...
+        return Ok();
+    }
+}
+
+// RIGHT: Never log the raw DTO - extract only safe fields
+[HttpPost("register")]
+public IActionResult Register(CreateUserRequest request)
+{
+    // Log only non-sensitive fields
+    _logger.LogInformation("Creating user {Username}", request.Username);
+
+    // Or create a DTO without secrets for logging
+    _logger.LogInformation("Creating user {Username} from {IpAddress}",
+        request.Username,
+        HttpContext.Connection.RemoteIpAddress);
+
+    // ... create user ...
+    return Ok();
+}
+```
+
+#### Never log raw exceptions from data-access code
+
+```csharp
+// non-compiling: illustrative
+
+// WRONG: Exception.ToString() includes connection strings in message
+public class UserRepository
+{
+    private readonly ILogger<UserRepository> _logger;
+    private readonly string _connectionString;
+
+    public UserRepository(ILogger<UserRepository> logger, string connectionString)
+    {
+        _logger = logger;
+        _connectionString = connectionString;
+    }
+
+    public User GetById(int id)
+    {
+        try
+        {
+            // ... database access ...
+        }
+        catch (Exception ex)
+        {
+            // Exception.ToString() includes connection string!
+            _logger.LogError(ex, "Failed to get user {UserId}", id);
+            throw;
+        }
+    }
+}
+
+// RIGHT: Never log raw exception from data layer - sanitize first
+public class UserRepository
+{
+    private readonly ILogger<UserRepository> _logger;
+
+    public UserRepository(ILogger<UserRepository> logger)
+    {
+        _logger = logger;
+    }
+
+    public User GetById(int id)
+    {
+        try
+        {
+            // ... database access ...
+        }
+        catch (Exception ex)
+        {
+            // Log sanitized message without connection string
+            _logger.LogError(ex, "Failed to get user {UserId}", id);
+            throw;
+        }
+    }
+}
+
+// Alternative: Use exception filters or sanitize exception
+public static class ExceptionSanitizer
+{
+    public static string Sanitize(Exception ex)
+    {
+        // Remove connection strings from exception messages
+        return ex.Message.Replace("Password=", "Password=***")
+                       .Replace("User Id=", "User Id=***");
+    }
+}
+```
+
+#### Use attributes for automatic redaction
+
+```csharp
+// non-compiling: illustrative
+
+// Mark sensitive properties with [JsonIgnore] or [LogPropertyIgnore]
+public record UserCredentials(
+    string Username,
+    [property: JsonIgnore] string Password,  // Never logged
+    [property: JsonIgnore] string ApiKey);   // Never logged
+
+public class AuthService
+{
+    private readonly ILogger<AuthService> _logger;
+
+    public AuthService(ILogger<AuthService> logger)
+    {
+        _logger = logger;
+    }
+
+    public void Authenticate(UserCredentials credentials)
+    {
+        // Safe: Password and ApiKey are ignored
+        _logger.LogInformation("Authenticating user {Username}", credentials.Username);
+    }
+}
+```
+
+#### Use source-generated loggers with property filtering
+
+```csharp
+// non-compiling: illustrative
+
+// Define source-generated logger with safe properties
+[LoggerMessage(1, LogLevel.Information, "Processing user {Username}")]
+public static partial void ProcessingUser(
+    ILogger logger,
+    string username);
+
+public class UserProcessor
+{
+    private readonly ILogger<UserProcessor> _logger;
+
+    public UserProcessor(ILogger<UserProcessor> logger)
+    {
+        _logger = logger;
+    }
+
+    public void Process(User user)
+    {
+        // Only Username is logged, other properties ignored
+        ProcessingUser(_logger, user.Username);
+    }
+}
+```
+
 ## Correlation and scope
 
 - One correlation id per request, propagated to outbound calls (`traceparent` header - ASP.NET Core + HttpClient do this automatically once OpenTelemetry or Activity propagation is on). A log line that cannot be joined to its request is decoration.
