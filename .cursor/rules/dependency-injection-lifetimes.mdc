@@ -1,7 +1,8 @@
 ---
 description: Review .NET dependency injection registrations for captive dependencies, scoped-in-singleton bugs, IServiceProvider abuse, disposal issues, and HttpClient registration. Use when writing or reviewing DI container registrations or constructor injection.
-globs: **/Program.cs,**/Startup.cs,**/*Extensions.cs,**/*.cs
+globs: **/Program.cs,**/Startup.cs,**/*Extensions*.cs
 alwaysApply: false
+---
 ---
 
 # Dependency Injection Lifetimes

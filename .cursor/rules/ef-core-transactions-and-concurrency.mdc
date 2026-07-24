@@ -1,7 +1,8 @@
 ---
 description: Review EF Core write paths - transaction boundaries, optimistic concurrency tokens, lost updates, retry strategies vs user transactions, and multi-aggregate consistency. Use when reviewing SaveChanges patterns, transactions, or concurrent-write handling.
-globs: **/*.cs
+globs: **/*DbContext*.cs,**/*Context*.cs,**/*Repository*.cs,**/Migrations/**/*.cs
 alwaysApply: false
+---
 ---
 
 # EF Core Transactions and Concurrency

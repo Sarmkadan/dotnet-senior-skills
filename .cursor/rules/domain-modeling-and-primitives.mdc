@@ -3,6 +3,7 @@ description: Review C# domain models - primitive obsession, value objects, recor
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Domain Modeling and Primitives
 

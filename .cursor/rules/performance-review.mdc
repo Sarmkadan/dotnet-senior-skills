@@ -3,6 +3,7 @@ description: Review .NET code for allocation pressure, string handling, Span/poo
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Performance Review (.NET)
 

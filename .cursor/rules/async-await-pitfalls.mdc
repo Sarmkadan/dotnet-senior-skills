@@ -3,6 +3,7 @@ description: Review C# async/await code for deadlocks, sync-over-async, async vo
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Async/Await Pitfalls
 

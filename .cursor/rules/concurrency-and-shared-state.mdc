@@ -3,6 +3,7 @@ description: Review .NET concurrency - lock discipline, Interlocked, concurrent 
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Concurrency and Shared State
 

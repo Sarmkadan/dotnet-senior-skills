@@ -1,7 +1,8 @@
 ---
 description: Review outbound HTTP in .NET - IHttpClientFactory usage, timeouts, retries with idempotency awareness, circuit breakers, and response handling. Use when reviewing HttpClient code, Polly/resilience policies, or any service-to-service calls.
-globs: **/*.cs
+globs: **/*HttpClient*.cs,**/*RestClient*.cs,**/*ServiceClient*.cs
 alwaysApply: false
+---
 ---
 
 # HTTP Resilience and Outbound Calls

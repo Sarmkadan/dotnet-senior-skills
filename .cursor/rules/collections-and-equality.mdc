@@ -3,6 +3,7 @@ description: Review .NET collection and equality code - choosing collection type
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Collections and Equality
 

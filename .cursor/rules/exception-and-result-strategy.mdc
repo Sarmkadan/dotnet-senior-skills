@@ -3,6 +3,7 @@ description: Decide when C# code should throw, when to return a Result type, wha
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Exception and Result Strategy
 

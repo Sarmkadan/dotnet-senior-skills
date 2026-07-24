@@ -1,7 +1,8 @@
 ---
 description: Security review checklist for ASP.NET Core - authorization vs authentication, IDOR, mass assignment, SQL injection through raw SQL and EF, secrets exposure, and unsafe deserialization. Use when reviewing endpoints, data access, or anything handling user input or credentials.
-globs: **/*.cs
+globs: **/*Controller*.cs,**/*Endpoint*.cs,**/*Service*.cs
 alwaysApply: false
+---
 ---
 
 # Security Review (.NET)

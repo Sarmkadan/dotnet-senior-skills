@@ -1,7 +1,8 @@
 ---
 description: Review EF Core LINQ queries for N+1, cartesian explosion, tracking overhead, client-side evaluation, and over-fetching. Use when writing or reviewing any code that queries a DbContext.
-globs: **/*.cs
+globs: **/*DbContext*.cs,**/Migrations/**/*.cs,**/*Context*.cs,**/*Repository*.cs
 alwaysApply: false
+---
 ---
 
 # EF Core Query Review

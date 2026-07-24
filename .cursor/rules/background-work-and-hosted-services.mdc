@@ -1,7 +1,8 @@
 ---
 description: Review .NET background processing - BackgroundService loops, scoped dependency resolution, graceful shutdown, timers, queue consumption, and outbox patterns. Use when reviewing IHostedService, BackgroundService, recurring jobs, or queue consumers.
-globs: **/*.cs
+globs: **/*BackgroundService*.cs,**/*HostedService*.cs,**/Program.cs,**/Startup.cs
 alwaysApply: false
+---
 ---
 
 # Background Work and Hosted Services

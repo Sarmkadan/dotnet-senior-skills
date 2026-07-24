@@ -3,6 +3,7 @@ description: Review IDisposable/IAsyncDisposable usage in .NET - what to dispose
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Disposal and Resource Lifetime
 

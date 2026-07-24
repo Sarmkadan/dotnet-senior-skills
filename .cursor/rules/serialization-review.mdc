@@ -3,6 +3,7 @@ description: Review .NET serialization - System.Text.Json configuration, contrac
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Serialization Review (.NET)
 

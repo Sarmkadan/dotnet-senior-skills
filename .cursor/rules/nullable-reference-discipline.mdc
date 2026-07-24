@@ -3,6 +3,7 @@ description: Enforce nullable reference type discipline in C# - annotation hones
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Nullable Reference Discipline
 

@@ -3,6 +3,7 @@ description: Review .NET code for managed memory leaks - event handler leaks, st
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Memory Leaks and Diagnostics
 

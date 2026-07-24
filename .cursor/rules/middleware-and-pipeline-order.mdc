@@ -1,7 +1,8 @@
 ---
 description: Review ASP.NET Core pipeline configuration - middleware ordering, auth placement, exception handling position, CORS, short-circuiting, and custom middleware pitfalls. Use when reviewing Program.cs pipeline setup or custom middleware.
-globs: **/*.cs
+globs: **/Program.cs,**/Startup.cs,**/*WebApplication*.cs,**/*AppBuilder*.cs
 alwaysApply: false
+---
 ---
 
 # Middleware and Pipeline Order

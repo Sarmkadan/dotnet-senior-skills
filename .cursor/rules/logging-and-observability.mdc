@@ -3,6 +3,7 @@ description: Review .NET logging and observability - structured logging discipli
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Logging and Observability
 

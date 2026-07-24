@@ -3,6 +3,7 @@ description: Enforce layering in ASP.NET Core services - what belongs in control
 globs: **/*Controller*.cs,**/*Service*.cs,**/*Repository*.cs,**/*Endpoint*.cs
 alwaysApply: false
 ---
+---
 
 # API Layer Boundaries
 

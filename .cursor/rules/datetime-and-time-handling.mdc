@@ -3,6 +3,7 @@ description: Review .NET date/time code - DateTime vs DateTimeOffset, UTC discip
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # DateTime and Time Handling
 

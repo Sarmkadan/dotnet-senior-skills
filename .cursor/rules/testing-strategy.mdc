@@ -3,6 +3,7 @@ description: Decide what to test at each layer of a .NET service, when integrati
 globs: **/*Tests*/**/*.cs,**/*Test*.cs
 alwaysApply: false
 ---
+---
 
 # Testing Strategy (.NET)
 

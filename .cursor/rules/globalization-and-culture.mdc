@@ -3,6 +3,7 @@ description: Review .NET culture-sensitivity bugs - parsing and formatting with 
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # Globalization and Culture
 

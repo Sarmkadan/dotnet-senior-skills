@@ -3,6 +3,7 @@ description: Apply SOLID principles concretely to C# code review - real smells, 
 globs: **/*.cs
 alwaysApply: false
 ---
+---
 
 # SOLID Review Checklist (C#, applied)
 
