@@ -68,6 +68,167 @@ Review flag: any `new Timer(...)` in a hosted service, and any recurring schedul
 - Poison messages: bounded retry with backoff, then dead-letter with the exception attached. An unbounded redelivery loop on a permanently failing message pins the consumer at 100% doing nothing.
 - Concurrency limit is explicit (`MaxConcurrentCalls`, prefetch count) and sized against the downstream dependency, not defaulted.
 
+## Unbounded resource consumption (DoS) from external input
+
+Any queue, channel, or background dispatch fed by external input must have a bounded capacity to prevent unbounded memory growth and denial-of-service through resource exhaustion. Untrusted input sources include HTTP endpoints, message queues, or any public API that can enqueue work.
+
+### The unbounded channel vulnerability
+
+Feeding an unbounded `Channel<T>` directly from a public endpoint allows an attacker to enqueue arbitrarily large payloads, causing unbounded memory growth and potentially crashing the process:
+
+```csharp
+// VULNERABLE: unbounded memory growth from untrusted input
+public class UnsafeController : ControllerBase
+{
+    private readonly Channel<LargePayload> _channel = Channel.CreateUnbounded<LargePayload>();
+
+    [HttpPost("enqueue")]
+    public async Task<IActionResult> Enqueue([FromBody] LargePayload payload)
+    {
+        // No size or rate limiting - attacker can send MBs of data
+        await _channel.Writer.WriteAsync(payload);
+        return Ok();
+    }
+}
+
+// Hosted service drains the channel
+public class PayloadProcessor : BackgroundService
+{
+    private readonly Channel<LargePayload> _channel;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await foreach (var payload in _channel.Reader.ReadAllAsync(stoppingToken))
+        {
+            await ProcessAsync(payload, stoppingToken);
+        }
+    }
+}
+```
+
+The above allows an attacker to send gigabytes of data, filling memory until the process crashes. The channel has no backpressure mechanism.
+
+
+
+### Bounded channel with backpressure
+
+Use `Channel.CreateBounded<T>` with a capacity limit and proper error handling:
+
+```csharp
+// SAFE: bounded capacity with backpressure
+public class SafeController : ControllerBase
+{
+    // Bounded channel with capacity limit
+    private readonly Channel<LargePayload> _channel = Channel.CreateBounded<LargePayload>(
+        new BoundedChannelOptions(1000) // Max 1000 items
+        {
+            FullMode = BoundedChannelFullMode.Wait, // Blocks when full
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+    [HttpPost("enqueue")]
+    public async Task<IActionResult> Enqueue([FromBody] LargePayload payload, CancellationToken ct)
+    {
+        try
+        {
+            // Will block if channel is full, providing natural backpressure
+            await _channel.Writer.WriteAsync(payload, ct);
+            return Ok();
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(503, "Service busy - try again later");
+        }
+        catch (ChannelFullException)
+        {
+            return StatusCode(429, "Too many requests - queue full");
+        }
+    }
+}
+
+// Hosted service drains the channel
+public class PayloadProcessor : BackgroundService
+{
+    private readonly Channel<LargePayload> _channel;
+    private readonly ILogger<PayloadProcessor> _logger;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await foreach (var payload in _channel.Reader.ReadAllAsync(stoppingToken))
+        {
+            try
+            {
+                await ProcessAsync(payload, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to process payload");
+                // Continue processing next item
+            }
+        }
+    }
+}
+```
+
+Key improvements:
+- **Bounded capacity**: Channel has a fixed maximum size (1000 items)
+- **Backpressure**: When full, writers block instead of accepting unbounded memory growth
+- **Error handling**: Proper exception handling prevents crashes from corrupt data
+- **Rate limiting**: Returns 429 when queue is full instead of accepting more work
+- **Cancellation support**: Respects cancellation tokens from HTTP layer
+
+### Task.Run fan-out without concurrency cap
+
+Similarly, spawning unbounded `Task.Run` calls from a request handler creates a DoS vector:
+
+```csharp
+// VULNERABLE: unbounded parallelism from untrusted input
+[HttpPost("process-all")]
+public IActionResult ProcessAll([FromBody] List<Guid> ids)
+{
+    // Attacker sends 100,000 IDs -> 100,000 concurrent tasks
+    foreach (var id in ids)
+    {
+        Task.Run(() => ProcessItemAsync(id)); // No limit!
+    }
+    return Ok();
+}
+```
+
+Use `Parallel.ForEachAsync` with a bounded concurrency instead:
+
+```csharp
+// SAFE: bounded concurrency
+[HttpPost("process-all")]
+public async Task<IActionResult> ProcessAll([FromBody] List<Guid> ids, CancellationToken ct)
+{
+    // Max 10 concurrent operations
+    await Parallel.ForEachAsync(
+        ids,
+        new ParallelOptions { MaxDegreeOfParallelism = 10, CancellationToken = ct },
+        async (id, innerCt) => await ProcessItemAsync(id, innerCt)
+    );
+    return Ok();
+}
+```
+
+### Rules for external input feeds
+
+1. **Bounded capacity required**: Any channel, queue, or collection fed by external input must have a fixed maximum size
+2. **Backpressure**: Use bounded channels with `BoundedChannelFullMode.Wait` or throw when full
+3. **Rate limiting**: Return 429 (Too Many Requests) when capacity is reached
+4. **Size limits**: Validate payload sizes before enqueuing (e.g., max 1MB per item)
+5. **Concurrency caps**: Use `Parallel.ForEachAsync` with `MaxDegreeOfParallelism` or explicit semaphores
+6. **Timeouts**: Always respect cancellation tokens from external sources
+7. **Monitoring**: Track queue depth and reject requests when approaching capacity limits
+
+Review flags:
+- Any `Channel.CreateUnbounded()` fed directly from a controller/action
+- Any `Task.Run`/`Task.Factory.StartNew` without concurrency limits
+- Any unbounded collection growth from HTTP input without validation
+- Missing `CancellationToken` parameters on public endpoints feeding background work
+
 ## Scheduling work from requests
 
 A request handler that needs work done after the response: do not `Task.Run` (captured scope dies with the request - see async skill). Minimum viable: a singleton `Channel<T>` written by the handler, drained by a hosted service. But if the work must survive a process restart, an in-memory channel is not a queue - use the outbox pattern (work row committed in the same transaction as the business change, relayed by a background service) or a durable queue. The review question is always "what happens if we deploy mid-flight?" - in-memory answers "the work is gone".
