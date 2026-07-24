@@ -16,6 +16,7 @@ Reject in controllers:
 - Composing multiple service calls into a workflow. A workflow is an application-service method; the controller calls it by name.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: orchestration in controller
 [HttpPost]
 public async Task<IActionResult> Create(CreateOrderRequest req)

@@ -8,6 +8,7 @@ description: Review EF Core LINQ queries for N+1, cartesian explosion, tracking 
 ## N+1: lazy loading and loops over navigations
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: 1 query for orders + N queries for customers
 var orders = await db.Orders.ToListAsync();
 foreach (var o in orders) Console.WriteLine(o.Customer.Name); // lazy-load per row
@@ -26,6 +27,7 @@ If lazy-loading proxies are enabled project-wide, treat every navigation access 
 ## Cartesian explosion with multiple collection Includes
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: rows = orders x items x payments; 100 orders with 50 items and 10 payments = 50,000 rows
 var o = await db.Orders.Include(x => x.Items).Include(x => x.Payments).ToListAsync();
 ```
@@ -37,6 +39,7 @@ Two or more collection `Include`s on the same level multiply row counts. Use `As
 Materializing full entities to return a DTO is the most common over-fetch. `Select` into the DTO directly: EF translates it to a column list, skips change tracking, and avoids loading unmapped blobs.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG
 var users = await db.Users.Include(u => u.Profile).ToListAsync();
 return users.Select(u => new UserDto(u.Id, u.Profile.AvatarUrl));
@@ -53,6 +56,7 @@ Every read-only query path (GET endpoints, reports, exports) must be `AsNoTracki
 EF Core throws on non-translatable expressions everywhere except the final `Select` - and that exception is your friend. The dangerous cases are the ones that do NOT throw:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: ToList() before Where pulls the whole table
 var active = db.Users.ToList().Where(u => IsActive(u));
 // WRONG: AsEnumerable mid-query does the same, quietly

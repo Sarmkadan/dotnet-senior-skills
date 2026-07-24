@@ -14,6 +14,7 @@ Whoever creates a disposable disposes it; whoever receives one does not. Every r
 - Injected via DI: the container owns it. Disposing an injected `DbContext` or typed `HttpClient` breaks the next consumer of the same scoped instance. A class whose only disposables are injected does not implement `IDisposable` at all.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: disposing what DI owns; second service in the scope gets a disposed context
 public sealed class OrderService : IDisposable
 {

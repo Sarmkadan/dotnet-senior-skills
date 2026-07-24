@@ -15,6 +15,7 @@ description: Enforce nullable reference type discipline in C# - annotation hones
 - `string? Name` means callers MUST handle null. Do not add `?` to silence a warning when the value is logically always present - fix the initialization instead.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: lying to the compiler to make the warning go away
 public string Email { get; set; } = null!;
 // RIGHT: the contract is enforced at construction

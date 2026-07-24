@@ -10,6 +10,7 @@ description: Review EF Core write paths - transaction boundaries, optimistic con
 One `SaveChanges` call commits all its changes atomically. The explicit-transaction review flags run in both directions:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: ceremony around what SaveChanges already guarantees
 using var tx = await _db.Database.BeginTransactionAsync(ct);
 _db.Orders.Add(order);

@@ -10,6 +10,7 @@ description: Review .NET serialization - System.Text.Json configuration, contrac
 `JsonSerializerOptions` caches type metadata; a new instance per call rebuilds it every time - a real, measured hot-path cost. Define the codebase's options once (static readonly, or via `ConfigureHttpJsonOptions`/`AddJsonOptions` for ASP.NET Core) and reference it everywhere:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: metadata cache rebuilt per call, and settings drift per call site
 return JsonSerializer.Serialize(dto, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 // RIGHT

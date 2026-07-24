@@ -21,6 +21,7 @@ builder.Services.AddAuthorizationBuilder()
 ## IDOR - the highest-yield finding in CRUD APIs
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: any authenticated user reads any invoice by iterating ids
 [HttpGet("{id}")]
 public Task<InvoiceDto?> Get(int id) => _db.Invoices.Where(i => i.Id == id).ProjectToDto().FirstOrDefaultAsync();
@@ -41,6 +42,7 @@ Binding request bodies to entities lets clients set any column: `{"name":"x","is
 Parameterization is the only defense; EF LINQ is parameterized automatically. The dangerous surface is raw SQL:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: interpolation into the SQL string
 var users = db.Users.FromSqlRaw($"SELECT * FROM Users WHERE Name = '{name}'");
 // RIGHT: FromSql / FromSqlInterpolated turns interpolation holes into parameters

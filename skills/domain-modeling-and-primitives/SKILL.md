@@ -13,6 +13,7 @@ A raw primitive is fine until it acquires rules or gets confused with its neighb
 - Money as `decimal`: adding EUR to USD compiles. `Money(decimal Amount, Currency Currency)` with an addition operator that throws on currency mismatch does not.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: every consumer re-validates or trusts blindly
 public void Register(string email) { ... }
 // RIGHT: an Email that exists is valid; the rule lives in one place

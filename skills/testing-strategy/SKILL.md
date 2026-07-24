@@ -16,6 +16,7 @@ description: Decide what to test at each layer of a .NET service, when integrati
 ## Mocking DbContext is a smell
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: mocking what you don't own, re-implementing the ORM in Moq
 var set = new Mock<DbSet<Order>>();
 set.As<IQueryable<Order>>().Setup(m => m.Provider).Returns(orders.Provider);

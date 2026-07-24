@@ -12,6 +12,7 @@ Most "how do I lock this" reviews end with removing the shared state: make the s
 ## lock discipline
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: check and act are separate; two threads both pass the check
 if (!_cache.ContainsKey(key)) { _cache[key] = Create(key); }
 // RIGHT: the whole read-modify-write under one lock (or use ConcurrentDictionary.GetOrAdd)

@@ -10,6 +10,7 @@ description: Review .NET dependency injection registrations for captive dependen
 A service must not depend on anything with a SHORTER lifetime. Singleton -> Scoped is the captive dependency: the singleton captures the first scope's instance forever.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: singleton captures a scoped DbContext
 services.AddSingleton<ICacheWarmer, CacheWarmer>(); // ctor takes AppDbContext
 ```

@@ -10,6 +10,7 @@ description: Review .NET background processing - BackgroundService loops, scoped
 `ExecuteAsync` is called once. An unhandled exception ends the service silently for the rest of the process lifetime (pre-.NET 8) or tears down the whole host (.NET 8+ default `BackgroundServiceExceptionBehavior.StopHost`). Neither is what a polling loop wants - it wants to log and continue:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: first transient DB blip permanently stops processing (or kills the app)
 protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 {

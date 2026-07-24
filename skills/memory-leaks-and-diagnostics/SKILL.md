@@ -14,6 +14,7 @@ The GC collects what is unreachable; a ".NET memory leak" is always something st
 `publisher.Event += subscriber.Handler` stores a reference to the subscriber inside the publisher. Long-lived publisher + short-lived subscriber = every subscriber ever, retained:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: scoped service subscribing to a singleton's event - one leaked scope graph per request
 public OrderProcessor(GlobalEvents events) => events.OrderPlaced += OnOrderPlaced;
 // RIGHT: unsubscribe symmetrically - which means the type is IDisposable

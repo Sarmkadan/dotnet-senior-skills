@@ -10,6 +10,7 @@ description: Review C# async/await code for deadlocks, sync-over-async, async vo
 `.Result`, `.Wait()`, `.GetAwaiter().GetResult()` on an incomplete task: instant rejection in request paths. In classic ASP.NET, WPF, WinForms it deadlocks (continuation needs the captured context the blocking thread holds). In ASP.NET Core it does not deadlock but burns a thread-pool thread per call and collapses under load via pool starvation - the symptom is p99 latency spiking while CPU is idle.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG
 var user = _client.GetUserAsync(id).Result;
 // RIGHT: make the caller async all the way up to the controller/handler
@@ -28,6 +29,7 @@ There is no safe wrapper. `Task.Run(...).Result` avoids the deadlock, costs two 
 Only for event handlers. Anywhere else, exceptions escape to the SynchronizationContext or crash the process, the caller cannot await or observe completion, and tests pass while work is still running.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG
 public async void SaveAndNotify() { await _repo.SaveAsync(); }
 // RIGHT

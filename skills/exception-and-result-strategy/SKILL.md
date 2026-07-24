@@ -13,6 +13,7 @@ description: Decide when C# code should throw, when to return a Result type, wha
 The test: if the immediate caller would catch the exception and convert it to control flow, it should have been a return value. Exceptions-as-control-flow costs a stack capture per throw (~microseconds each - ruinous in loops) and hides branches from the reader.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: expected outcome modeled as exception
 try { await _orders.PlaceAsync(cmd); return Ok(); }
 catch (InsufficientStockException e) { return Conflict(e.Message); }

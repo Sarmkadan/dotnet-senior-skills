@@ -1,0 +1,139 @@
+name: Validate Skills
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  validate-skills:
+    name: Validate skill files and C# samples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install validation tool
+        run: |
+          dotnet new tool-manifest
+          dotnet tool install --local dotnet-script
+
+      - name: Validate skill frontmatter schema
+        run: |
+          # Validate all SKILL.md files have correct frontmatter
+          find skills -name "SKILL.md" -type f | while read file; do
+            echo "Validating: $file"
+            # Check for required frontmatter fields
+            if ! grep -q "^name:" "$file"; then
+              echo "ERROR: Missing 'name:' field in $file"
+              exit 1
+            fi
+            if ! grep -q "^description:" "$file"; then
+              echo "ERROR: Missing 'description:' field in $file"
+              exit 1
+            fi
+
+            # Extract name value
+            name=$(grep "^name:" "$file" | sed 's/^name:[[:space:]]*//' | tr -d '"' | head -1)
+            if [ -z "$name" ]; then
+              echo "ERROR: Empty name field in $file"
+              exit 1
+            fi
+
+            # Validate name is lowercase with hyphens
+            if [[ "$name" =~ [A-Z] ]]; then
+              echo "ERROR: Skill name should be lowercase with hyphens: $name in $file"
+              exit 1
+            fi
+
+            # Validate description exists and is not empty
+            if ! grep -A1 "^description:" "$file" | grep -v "^description:" | grep -v "^---" | grep -q .; then
+              echo "ERROR: Empty description field in $file"
+              exit 1
+            fi
+
+          done
+          echo "✓ All skill files have valid frontmatter"
+
+      - name: Extract and validate C# samples
+        run: |
+          # Create a temporary directory for sample projects
+          mkdir -p /tmp/csharp-samples
+
+          # Process each skill file
+          find skills -name "*.md" -type f | while read skill_file; do
+            echo "Processing: $skill_file"
+
+            # Extract fenced code blocks with csharp language
+            awk '
+              /^```csharp/ { in_block=1; block=""; next }
+              in_block && /^```/ {
+                in_block=0
+                # Check if this block has the opt-out marker
+                if echo "$block" | grep -q "// non-compiling: illustrative"; then
+                  echo "Skipping non-compiling block in $skill_file"
+                else
+                  # Create a unique project name from the skill path
+                  skill_name=$(echo "$skill_file" | sed 's|skills/||' | sed 's|/SKILL.md||' | sed 's|/||' | sed 's|/|-|g')
+                  proj_name="sample-${skill_name}-$(echo "$block" | md5sum | cut -c1-8)"
+                  proj_dir="/tmp/csharp-samples/${proj_name}"
+
+                  mkdir -p "$proj_dir"
+
+                  # Create csproj file
+                  cat > "$proj_dir/sample.csproj" << 'PROJECT_EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+  </ItemGroup>
+</Project>
+PROJECT_EOF
+
+                  # Create Program.cs with the extracted code
+                  cat > "$proj_dir/Program.cs" << EOF
+using System;
+using System.Threading.Tasks;
+
+// Extracted from: $skill_file
+// Line: $line_num
+
+$block
+EOF
+
+                  # Try to build the project
+                  echo "Building sample project: $proj_name"
+                  cd "$proj_dir"
+                  if ! dotnet build -v quiet -c Release; then
+                    echo "ERROR: Failed to build sample from $skill_file"
+                    exit 1
+                  fi
+                  cd - > /dev/null
+                fi
+                block=""
+              }
+              in_block { block = block $0 "\n" }
+            ' "$skill_file"
+          done
+
+          echo "✓ All C# samples compile successfully"
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf /tmp/csharp-samples

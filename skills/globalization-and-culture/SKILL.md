@@ -10,6 +10,7 @@ description: Review .NET culture-sensitivity bugs - parsing and formatting with 
 `double.Parse`, `decimal.ToString`, `DateTime.Parse`, `string.Format`, and interpolation all default to `CultureInfo.CurrentCulture` - the culture of the thread, which in a server means "whatever the OS image or a stray configuration set". Code that works on the developer's en-US machine and corrupts data on a de-DE server:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: on a German-culture server, "1.5" parses as 15 (dot is a thousands separator)
 var price = decimal.Parse(priceText);
 // WRONG: emits "1,5" into a CSV/JSON/SQL string that expects "1.5"

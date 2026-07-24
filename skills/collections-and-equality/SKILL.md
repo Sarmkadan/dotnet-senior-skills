@@ -15,6 +15,7 @@ description: Review .NET collection and equality code - choosing collection type
 ## Exposed mutable collections
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: any consumer can do order.Lines.Clear() - the invariant has a side door
 public List<OrderLine> Lines { get; set; } = new();
 // RIGHT: mutation goes through the method that enforces the rules

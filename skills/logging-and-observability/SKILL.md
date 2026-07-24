@@ -10,6 +10,7 @@ description: Review .NET logging and observability - structured logging discipli
 Message templates with named placeholders, never interpolation:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: one opaque string; unsearchable, allocates even when Info is filtered out
 _logger.LogInformation($"Order {order.Id} shipped to {order.Country}");
 // RIGHT: queryable fields OrderId and Country, zero cost when the level is off

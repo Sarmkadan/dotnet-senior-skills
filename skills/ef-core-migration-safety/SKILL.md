@@ -18,6 +18,7 @@ Grep the generated migration for `DropColumn`, `DropTable`, `AlterColumn`, `Rena
 EF cannot always tell a rename from drop+add. Verify the migration contains `RenameColumn`, not this:
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: silently destroys data
 migrationBuilder.DropColumn(name: "Surname", table: "Users");
 migrationBuilder.AddColumn<string>(name: "LastName", table: "Users");

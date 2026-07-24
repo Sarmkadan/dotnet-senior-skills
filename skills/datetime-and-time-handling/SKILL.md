@@ -10,6 +10,7 @@ description: Review .NET date/time code - DateTime vs DateTimeOffset, UTC discip
 `DateTime` carries a `Kind` flag that nothing enforces: a `Kind.Unspecified` value round-tripped through JSON, a database, or `ToLocalTime()` silently reinterprets the same ticks as a different instant. `DateTimeOffset` carries the offset in the value - comparisons and serialization are unambiguous.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: is this UTC? Local? Depends on who wrote it and which driver read it back.
 public DateTime CreatedAt { get; set; }
 // RIGHT
@@ -29,6 +30,7 @@ Review flag: `DateTime.Now` anywhere in server code. Server-local time depends o
 Any logic that branches on "now" (expiry, grace periods, business-day rules) is untestable when it calls the static clock. .NET 8+ ships `TimeProvider`; inject it, register `TimeProvider.System`, and use `FakeTimeProvider` (Microsoft.Extensions.TimeProvider.Testing) in tests.
 
 ```csharp
+// non-compiling: illustrative
 // WRONG: the test for "expires after 30 days" needs Thread.Sleep or a real month
 if (DateTimeOffset.UtcNow > order.CreatedAt.AddDays(30)) { ... }
 // RIGHT
