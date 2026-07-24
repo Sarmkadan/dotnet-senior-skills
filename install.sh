@@ -1,8 +1,11 @@
 #!/bin/sh
-# Usage: ./install.sh /path/to/your/project
+# Usage: ./install.sh [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>
 # Installs Claude Code skills, Cursor rules, and Copilot instructions into a target project.
 #
 # Options:
+# --tools TOOLS Comma-separated list of tool formats to install (claude,cursor,copilot). Default: all detected tools
+# --only CATEGORIES Comma-separated list of skill categories to install (e.g., ef,async,globalization)
+# --skip CATEGORIES Comma-separated list of skill categories to skip (e.g., ef,globalization)
 # --force Overwrite existing files without prompting
 # --uninstall /path Remove files previously installed by this installer
 # --upgrade /path Upgrade files previously installed by this installer
@@ -19,6 +22,55 @@ UNINSTALL=false
 UNINSTALL_PATH=""
 UPGRADE=false
 UPGRADE_PATH=""
+TOOLS=""
+ONLY_CATEGORIES=""
+SKIP_CATEGORIES=""
+
+# --- Helper functions ---
+
+# Extract category from skill directory name
+# e.g., "ef-core-transactions-and-concurrency" -> "ef"
+# e.g., "async-await-pitfalls" -> "async"
+# e.g., "globalization-and-culture" -> "globalization"
+extract_category() {
+  local dir_name="$1"
+
+  # Remove leading path if present
+  dir_name=$(basename "$dir_name")
+
+  # Extract first segment before dash
+  category=$(echo "$dir_name" | cut -d'-' -f1)
+
+  # Normalize to lowercase
+  echo "$category" | tr '[:upper:]' '[:lower:]'
+}
+
+# Check if a category should be included based on --only and --skip filters
+should_install_category() {
+  local category="$1"
+
+  # If --only is specified, only install matching categories
+  if [ -n "$ONLY_CATEGORIES" ]; then
+    for filter in $(echo "$ONLY_CATEGORIES" | tr ',' ' '); do
+      if [ "$category" = "$filter" ]; then
+        return 0  # Include this category
+      fi
+    done
+    return 1  # Exclude this category
+  fi
+
+  # If --skip is specified, exclude matching categories
+  if [ -n "$SKIP_CATEGORIES" ]; then
+    for filter in $(echo "$SKIP_CATEGORIES" | tr ',' ' '); do
+      if [ "$category" = "$filter" ]; then
+        return 1  # Exclude this category
+      fi
+    done
+  fi
+
+  # Default: include the category
+  return 0
+}
 
 validate_path_exists() {
   local path="$1"
@@ -30,6 +82,39 @@ validate_path_exists() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --tools)
+      shift
+      if [ $# -gt 0 ] && [ "$(echo "$1" | cut -c1)" != "-" ]; then
+        TOOLS="$1"
+        shift
+      else
+        echo "Error: --tools requires a comma-separated list of tools" >&2
+        echo "Usage: $0 --tools claude,cursor,copilot <target>" >&2
+        exit 1
+      fi
+      ;;
+    --only)
+      shift
+      if [ $# -gt 0 ] && [ "$(echo "$1" | cut -c1)" != "-" ]; then
+        ONLY_CATEGORIES="$1"
+        shift
+      else
+        echo "Error: --only requires a comma-separated list of categories" >&2
+        echo "Usage: $0 --only ef,async <target>" >&2
+        exit 1
+      fi
+      ;;
+    --skip)
+      shift
+      if [ $# -gt 0 ] && [ "$(echo "$1" | cut -c1)" != "-" ]; then
+        SKIP_CATEGORIES="$1"
+        shift
+      else
+        echo "Error: --skip requires a comma-separated list of categories" >&2
+        echo "Usage: $0 --skip ef,globalization <target>" >&2
+        exit 1
+      fi
+      ;;
     --force)
       FORCE=true
       shift
@@ -60,7 +145,7 @@ while [ $# -gt 0 ]; do
       ;;
     --*)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
+      echo "Usage: $0 [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
       exit 1
       ;;
     *)
@@ -74,6 +159,74 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# --- Tool detection and validation ---
+# Auto-detect tools if --tools flag is not provided
+if [ -z "$TOOLS" ]; then
+  # Check for .claude directory in target project
+  if [ -d "$TARGET/.claude" ]; then
+    TOOLS="claude"
+  fi
+
+  # Check for .cursor directory in target project
+  if [ -d "$TARGET/.cursor" ]; then
+    if [ -z "$TOOLS" ]; then
+      TOOLS="cursor"
+    else
+      TOOLS="$TOOLS,cursor"
+    fi
+  fi
+
+  # Check for .github/copilot-instructions.md in target project
+  if [ -f "$TARGET/.github/copilot-instructions.md" ]; then
+    if [ -z "$TOOLS" ]; then
+      TOOLS="copilot"
+    else
+      TOOLS="$TOOLS,copilot"
+    fi
+  fi
+
+  # If no tools detected, default to all three
+  if [ -z "$TOOLS" ]; then
+    TOOLS="claude,cursor,copilot"
+  fi
+
+  # Normalize detected tools to lowercase
+  TOOLS=$(echo "$TOOLS" | tr '[:upper:]' '[:lower:]')
+fi
+
+# Parse --tools argument
+# Normalize tools to lowercase
+TOOLS=$(echo "$TOOLS" | tr '[:upper:]' '[:lower:]')
+
+# Validate tools
+for tool in $(echo "$TOOLS" | tr ',' ' '); do
+  case "$tool" in
+    claude|cursor|copilot)
+      # Valid tool
+      ;;
+    *)
+      echo "Error: Invalid tool specified: $tool" >&2
+      echo "Valid tools: claude, cursor, copilot" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Parse --only and --skip arguments
+if [ -n "$ONLY_CATEGORIES" ] && [ -n "$SKIP_CATEGORIES" ]; then
+  echo "Error: Cannot use both --only and --skip together" >&2
+  exit 1
+fi
+
+# Normalize categories to lowercase
+if [ -n "$ONLY_CATEGORIES" ]; then
+  ONLY_CATEGORIES=$(echo "$ONLY_CATEGORIES" | tr '[:upper:]' '[:lower:]')
+fi
+
+if [ -n "$SKIP_CATEGORIES" ]; then
+  SKIP_CATEGORIES=$(echo "$SKIP_CATEGORIES" | tr '[:upper:]' '[:lower:]')
+fi
 
 # Handle uninstall mode
 if [ "$UNINSTALL" = true ]; then
@@ -312,16 +465,31 @@ if [ -d "$SRC/skills" ]; then
     exit 1
   fi
 
-  # Copy skills recursively using rsync to preserve directory structure
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -a "$SRC/skills/" "$TARGET/.claude/skills/" || {
-      echo "Error: Failed to copy skills directory" >&2
-      exit 1
-    }
-  else
-    # Fallback to cp if rsync is not available
-    cp -r "$SRC/skills/"* "$TARGET/.claude/skills/" 2>/dev/null || true
-  fi
+  # Install individual skill directories based on filters
+  for skill_dir in "$SRC/skills"/*/; do
+    if [ -d "$skill_dir" ]; then
+      # Extract category from directory name
+      category=$(extract_category "$skill_dir")
+
+      # Check if this category should be installed
+      if should_install_category "$category"; then
+        # Copy this specific skill directory
+        # Remove trailing slash to copy the directory itself
+        skill_dir_no_slash="${skill_dir%/}"
+        if command -v rsync >/dev/null 2>&1; then
+          rsync -a "$skill_dir_no_slash/" "$TARGET/.claude/skills/$(basename "$skill_dir_no_slash")/" || {
+            echo "Error: Failed to copy skill directory: $skill_dir" >&2
+            exit 1
+          }
+        else
+          # Fallback to cp if rsync is not available
+          cp -r "$skill_dir_no_slash" "$TARGET/.claude/skills/" 2>/dev/null || true
+        fi
+      else
+        echo "Skipping skill category: $category" >&2
+      fi
+    fi
+  done
 
   # Count installed skill files
   SKILLS_INSTALLED=$(find "$TARGET/.claude/skills" -type f 2>/dev/null | wc -l || echo 0)
@@ -342,25 +510,75 @@ else
 fi
 
 # --- Install cursor rules ---
-if [ -d "$SRC/.cursor/rules" ]; then
-  for rule_file in "$SRC/.cursor/rules"/*.mdc; do
-    if [ -f "$rule_file" ]; then
-      relative_path=".cursor/rules/$(basename "$rule_file")"
-      install_with_backup "$rule_file" "$TARGET/.cursor/rules/$(basename "$rule_file")" "cursor" "$relative_path"
+# Install cursor rules only if cursor tool is requested or no --tools filter is specified
+cursor_should_install=true
+
+if [ -n "$TOOLS" ]; then
+  # Check if cursor tool is requested
+  cursor_requested=false
+  for tool in $(echo "$TOOLS" | tr ',' ' '); do
+    if [ "$tool" = "cursor" ]; then
+      cursor_requested=true
+      break
     fi
   done
-else
-  echo "Error: Source cursor rules directory not found: $SRC/.cursor/rules" >&2
-  exit 1
+
+  if [ "$cursor_requested" = false ]; then
+    cursor_should_install=false
+    echo "Skipping Cursor rules installation (not requested via --tools)" >&2
+  fi
+fi
+
+if [ "$cursor_should_install" = true ]; then
+  if [ -d "$SRC/.cursor/rules" ]; then
+    for rule_file in "$SRC/.cursor/rules"/*.mdc; do
+      if [ -f "$rule_file" ]; then
+        # Extract category from cursor rule filename
+        # e.g., "ef-core-transactions-and-concurrency.mdc" -> "ef"
+        filename=$(basename "$rule_file")
+        category=$(echo "$filename" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
+
+        # Check if this category should be installed
+        if should_install_category "$category"; then
+          relative_path=".cursor/rules/$filename"
+          install_with_backup "$rule_file" "$TARGET/.cursor/rules/$filename" "cursor" "$relative_path"
+        else
+          echo "Skipping cursor rule category: $category" >&2
+        fi
+      fi
+    done
+  fi
 fi
 
 # --- Install copilot instructions ---
-if [ -f "$SRC/.github/copilot-instructions.md" ]; then
-  relative_path=".github/copilot-instructions.md"
-  install_with_backup "$SRC/.github/copilot-instructions.md" "$TARGET/.github/copilot-instructions.md" "copilot" "$relative_path"
-else
-  echo "Error: Copilot instructions file not found: $SRC/.github/copilot-instructions.md" >&2
-  exit 1
+# Install copilot instructions only if copilot tool is requested or no --tools filter is specified
+copilot_should_install=true
+
+if [ -n "$TOOLS" ]; then
+  # Check if copilot tool is requested
+  copilot_requested=false
+  for tool in $(echo "$TOOLS" | tr ',' ' '); do
+    if [ "$tool" = "copilot" ]; then
+      copilot_requested=true
+      break
+    fi
+  done
+
+  if [ "$copilot_requested" = false ]; then
+    copilot_should_install=false
+    echo "Skipping Copilot instructions installation (not requested via --tools)" >&2
+  fi
+fi
+
+if [ "$copilot_should_install" = true ]; then
+  if [ -f "$SRC/.github/copilot-instructions.md" ]; then
+    # Check if any installed category is covered by copilot instructions
+    # The copilot instructions file covers: ef, async, layering, errors, di, configuration, nullability, testing, performance, security, time, disposal, logging, concurrency, background, serialization, http, domain, ef-transactions
+    # For simplicity, we'll install it if any category is being installed
+    # Users can use --skip to exclude specific categories, but the copilot file is comprehensive
+    relative_path=".github/copilot-instructions.md"
+    install_with_backup "$SRC/.github/copilot-instructions.md" "$TARGET/.github/copilot-instructions.md" "copilot" "$relative_path"
+  fi
 fi
 
 # --- Write manifest file ---
@@ -372,9 +590,32 @@ fi
 # --- Summary ---
 echo "Installation successful!" >&2
 echo "Installed components:" >&2
-echo " - Claude Code skills: $SKILLS_INSTALLED" >&2
-echo " - Cursor rules: $CURSOR_RULES_INSTALLED" >&2
-echo " - Copilot instructions: $COPILOT_INSTRUCTIONS_INSTALLED" >&2
+
+# Always show skills count if any were installed
+if [ $SKILLS_INSTALLED -gt 0 ]; then
+  echo " - Claude Code skills: $SKILLS_INSTALLED" >&2
+fi
+
+# Show cursor rules only if they were installed
+if [ $CURSOR_RULES_INSTALLED -gt 0 ]; then
+  echo " - Cursor rules: $CURSOR_RULES_INSTALLED" >&2
+fi
+
+# Show copilot instructions only if they were installed
+if [ $COPILOT_INSTRUCTIONS_INSTALLED -gt 0 ]; then
+  echo " - Copilot instructions: $COPILOT_INSTRUCTIONS_INSTALLED" >&2
+fi
+
+# Show filter information if filters were used
+if [ -n "$ONLY_CATEGORIES" ]; then
+  echo " - Filter: --only $ONLY_CATEGORIES" >&2
+elif [ -n "$SKIP_CATEGORIES" ]; then
+  echo " - Filter: --skip $SKIP_CATEGORIES" >&2
+fi
+
+if [ -n "$TOOLS" ]; then
+  echo " - Tools: $TOOLS" >&2
+fi
 
 if [ -n "$INSTALLED_FILES" ]; then
   echo "\nInstalled files:" >&2
