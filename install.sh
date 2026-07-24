@@ -3,7 +3,7 @@
 # Installs Claude Code skills, Cursor rules, and Copilot instructions into a target project.
 #
 # Options:
-# --tools TOOLS Comma-separated list of tool formats to install (claude,cursor,copilot). Default: all detected tools
+# --tools TOOLS Comma-separated list of tool formats to install (claude,cursor,copilot,agents,windsurf,cline). Default: all detected tools
 # --only CATEGORIES Comma-separated list of skill categories to install (e.g., ef,async,globalization)
 # --skip CATEGORIES Comma-separated list of skill categories to skip (e.g., ef,globalization)
 # --force Overwrite existing files without prompting
@@ -186,9 +186,20 @@ if [ -z "$TOOLS" ]; then
     fi
   fi
 
+
+# Check for AGENTS.md in source directory (indicates new format support)
+if [ -f "$SRC/AGENTS.md" ]; then
+if [ -z "$TOOLS" ]; then
+TOOLS="agents"
+else
+TOOLS="$TOOLS,agents"
+fi
+fi
+
+# If no tools detected, default to all six formats
   # If no tools detected, default to all three
   if [ -z "$TOOLS" ]; then
-    TOOLS="claude,cursor,copilot"
+    TOOLS="claude,cursor,copilot,agents,windsurf,cline"
   fi
 
   # Normalize detected tools to lowercase
@@ -202,12 +213,12 @@ TOOLS=$(echo "$TOOLS" | tr '[:upper:]' '[:lower:]')
 # Validate tools
 for tool in $(echo "$TOOLS" | tr ',' ' '); do
   case "$tool" in
-    claude|cursor|copilot)
+    claude|cursor|copilot|agents|windsurf|cline)
       # Valid tool
       ;;
     *)
       echo "Error: Invalid tool specified: $tool" >&2
-      echo "Valid tools: claude, cursor, copilot" >&2
+      echo "Valid tools: claude, cursor, copilot, agents, windsurf, cline" >&2
       exit 1
       ;;
   esac
@@ -381,6 +392,9 @@ INSTALLED_FILES=""
 SKILLS_INSTALLED=0
 CURSOR_RULES_INSTALLED=0
 COPILOT_INSTRUCTIONS_INSTALLED=0
+AGENTS_MD_INSTALLED=0
+WINDSURF_RULES_INSTALLED=0
+CLINE_RULES_INSTALLED=0
 MANIFEST_CONTENT=""
 
 # Function to calculate SHA256 hash of a file
@@ -692,11 +706,12 @@ fi
 # Show copilot instructions only if they were installed
 if [ $COPILOT_INSTRUCTIONS_INSTALLED -gt 0 ]; then
   echo " - Copilot instructions: $COPILOT_INSTRUCTIONS_INSTALLED" >&2
+  echo " - Windsurf rules: $WINDSURF_RULES_INSTALLED" >&2  echo " - Cline rules: $CLINE_RULES_INSTALLED" >&2  echo " - AGENTS.md: $AGENTS_MD_INSTALLED" >&2
 fi
 
 # Show filter information if filters were used
 if [ -n "$ONLY_CATEGORIES" ]; then
-  echo " - Filter: --only $ONLY_CATEGORIES" >&2
+  echo " - AGENTS.md: $AGENTS_MD_INSTALLED" >&2
 elif [ -n "$SKIP_CATEGORIES" ]; then
   echo " - Filter: --skip $SKIP_CATEGORIES" >&2
 fi
@@ -718,3 +733,96 @@ else
 fi
 
 exit 0
+
+# --- Install AGENTS.md ---
+# Install AGENTS.md only if agents tool is requested or no --tools filter is specified
+agents_should_install=true
+
+if [ -n "$TOOLS" ]; then
+  # Check if agents tool is requested
+  agents_requested=false
+  for tool in $(echo "$TOOLS" | tr ',' ' '); do
+    if [ "$tool" = "agents" ]; then
+      agents_requested=true
+      break
+    fi
+  done
+
+  if [ "$agents_requested" = false ]; then
+    agents_should_install=false
+    echo "Skipping AGENTS.md installation (not requested via --tools)" >&2
+  fi
+fi
+
+if [ "$agents_should_install" = true ]; then
+  if [ -f "$SRC/AGENTS.md" ]; then
+    relative_path="AGENTS.md"
+    install_with_backup "$SRC/AGENTS.md" "$TARGET/AGENTS.md" "agents" "$relative_path"
+  fi
+fi
+
+# --- Install Windsurf rules ---
+# Install Windsurf rules only if windsurf tool is requested or no --tools filter is specified
+windsurf_should_install=true
+
+if [ -n "$TOOLS" ]; then
+  # Check if windsurf tool is requested
+  windsurf_requested=false
+  for tool in $(echo "$TOOLS" | tr ',' ' '); do
+    if [ "$tool" = "windsurf" ]; then
+      windsurf_requested=true
+      break
+    fi
+  done
+
+  if [ "$windsurf_requested" = false ]; then
+    windsurf_should_install=false
+    echo "Skipping Windsurf rules installation (not requested via --tools)" >&2
+  fi
+fi
+
+if [ "$windsurf_should_install" = true ]; then
+  if [ -d "$SRC/.windsurfrules" ]; then
+    # Copy all .md files from .windsurfrules directory
+    while IFS= read -r rule_file; do
+      if [ -f "$rule_file" ]; then
+        # Extract relative path
+        relative_path=".windsurfrules/$(basename "$rule_file")"
+        install_with_backup "$rule_file" "$TARGET/.windsurfrules/$(basename "$rule_file")" "windsurf" "$relative_path"
+      fi
+    done < <(find "$SRC/.windsurfrules" -name "*.md" -type f)
+  fi
+fi
+
+# --- Install Cline rules ---
+# Install Cline rules only if cline tool is requested or no --tools filter is specified
+cline_should_install=true
+
+if [ -n "$TOOLS" ]; then
+  # Check if cline tool is requested
+  cline_requested=false
+  for tool in $(echo "$TOOLS" | tr ',' ' '); do
+    if [ "$tool" = "cline" ]; then
+      cline_requested=true
+      break
+    fi
+  done
+
+  if [ "$cline_requested" = false ]; then
+    cline_should_install=false
+    echo "Skipping Cline rules installation (not requested via --tools)" >&2
+  fi
+fi
+
+if [ "$cline_should_install" = true ]; then
+  if [ -d "$SRC/.clinerules" ]; then
+    # Copy all .clinerules files from .clinerules directory
+    while IFS= read -r rule_file; do
+      if [ -f "$rule_file" ]; then
+        # Extract relative path
+        relative_path=".clinerules/$(basename "$rule_file")"
+        install_with_backup "$rule_file" "$TARGET/.clinerules/$(basename "$rule_file")" "cline" "$relative_path"
+      fi
+    done < <(find "$SRC/.clinerules" -name "*.clinerules" -type f)
+  fi
+fi

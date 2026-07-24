@@ -1,0 +1,60 @@
+# ef-core-migration-safety
+
+Review EF Core migrations for data loss, downtime, and deploy-order hazards. Use when adding, reviewing, or applying EF Core migrations, or when a schema change must ship without downtime.
+
+## Classify every migration before merging
+
+1. **Additive online** - new nullable column, new table, new index (if built concurrently). Safe to deploy in any order.
+2. **Additive blocking** - new NOT NULL column without default on a large table, new index without `CONCURRENTLY` (Postgres) / `ONLINE = ON` (SQL Server). Locks the table for the duration.
+3. **Destructive** - drop column/table, narrow a type, add a constraint existing rows violate, rename. Requires the expand/contract pattern below.
+
+Grep the generated migration for `DropColumn`, `DropTable`, `AlterColumn`, `RenameColumn`, `AddColumn` with `nullable: false`. Any hit means the migration cannot be reviewed by skimming the model diff - read the SQL via `dotnet ef migrations script`.
+
+## Renames are drops in disguise
+
+EF cannot always tell a rename from drop+add. Verify the migration contains `RenameColumn`, not this:
+
+```csharp
+// non-compiling: illustrative
+// WRONG: silently destroys data
+migrationBuilder.DropColumn(name: "Surname", table: "Users");
+migrationBuilder.AddColumn<string>(name: "LastName", table: "Users");
+```
+
+If the scaffolder produced drop+add, hand-edit it to `RenameColumn`. Test by applying to a database with data, not an empty one.
+
+## Zero-downtime column changes (expand/contract)
+
+Old app code and new schema coexist during a rolling deploy. Never ship a migration the *previous* app version cannot run against.
+
+Adding a required column:
+
+```csharp
+// Release 1: add nullable, app writes it
+migrationBuilder.AddColumn<string>("Region", "Orders", nullable: true);
+// Release 2: backfill out-of-band, then enforce
+migrationBuilder.Sql("UPDATE Orders SET Region = 'EU' WHERE Region IS NULL");
+migrationBuilder.AlterColumn<string>("Region", "Orders", nullable: false);
+```
+
+Dropping a column: release 1 removes every read and write of the property but keeps it mapped, so old and new app versions both run against the existing column; release 2 removes the property from the model and ships the `DropColumn` migration. A one-release drop breaks the still-running old instances.
+
+## NOT NULL with defaultValue on big tables
+
+```csharp
+migrationBuilder.AddColumn<bool>("IsActive", "Users", nullable: false, defaultValue: true);
+```
+
+On SQL Server 2012+/Postgres 11+ this is metadata-only. On older engines it rewrites the table under an exclusive lock. Know your target before approving.
+
+## The shadow-property trap
+
+An FK without a navigation-configured principal or a misspelled property gets a shadow column (`CustomerId1`). Symptoms: a duplicate-looking column in the migration, silently null FKs at runtime. When a migration adds a column you did not add to the model, stop - it is almost always a relationship EF inferred wrongly. Fix the model configuration; never merge the migration hoping it is harmless.
+
+## Operational rules
+
+- Never call `Database.Migrate()` from application startup in multi-instance deployments: concurrent migrators race, and a failed migration takes the app down. Run migrations as a separate deploy step (`dotnet ef database update` or an idempotent script with `--idempotent`).
+- Generated `Down()` methods restore schema, not data. Treat rollback of destructive migrations as impossible; roll forward instead.
+- Migrations are immutable once merged to main. Fix mistakes with a new migration, never by editing an applied one - the `__EFMigrationsHistory` hash will not match and other environments diverge.
+- Squash only migrations that no environment has partially applied.
+- Review raw SQL in migrations (`migrationBuilder.Sql`) for idempotency: it runs exactly once per database, but `--idempotent` scripts may replay surrounding context.

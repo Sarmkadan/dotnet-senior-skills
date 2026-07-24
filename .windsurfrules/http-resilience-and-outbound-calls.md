@@ -1,0 +1,102 @@
+# http-resilience-and-outbound-calls
+
+Review outbound HTTP in .NET - IHttpClientFactory usage, timeouts, retries with idempotency awareness, circuit breakers, and response handling. Use when reviewing HttpClient code, Polly/resilience policies, or any service-to-service calls.
+
+## Client construction
+
+`new HttpClient()` per operation exhausts sockets (each instance owns a handler and its connections; disposed connections sit in TIME_WAIT). A single static `HttpClient` fixes that but caches DNS forever - it keeps calling the old IP after a failover. `IHttpClientFactory` solves both; it is the only acceptable construction in application code:
+
+```csharp
+services.AddHttpClient<PaymentsClient>(c => 
+{
+    c.BaseAddress = new Uri(opts.BaseUrl);
+    c.Timeout = TimeSpan.FromSeconds(10);
+});
+```
+
+Typed clients over named clients (compile-checked, config in one place). Two reminders from the DI skill: typed clients are transient - injecting one into a singleton freezes a single handler past its rotation window (stale DNS returns); and do not `using` the injected client.
+
+## Timeouts: the non-negotiable
+
+The review question for every outbound call: "what happens when this dependency hangs?" The default 100-second `HttpClient.Timeout` means the answer is "requests pile up for 100 seconds, then the thread pool and connection pool are gone" - a slow dependency takes you down harder than a dead one.
+
+- Every client gets an explicit `Timeout` sized to the dependency's p99 plus margin - seconds, not the default.
+- Per-attempt vs overall: `HttpClient.Timeout` caps the whole operation including retries inside a `DelegatingHandler`; the per-attempt timeout is a resilience-pipeline policy. You need both, and per-attempt < overall / (retries + 1) or the retries never happen.
+- Flow the caller's `CancellationToken` into every `SendAsync`/`GetAsync` - a timeout policy without the request token keeps calling dependencies for clients that already disconnected.
+
+## Retries without a foot-gun
+
+**Reject legacy Polly v7 syntax.** The old `Policy.Handle<T>().WaitAndRetryAsync` and manual `IAsyncPolicy` registrations produce verbose, error-prone code that bypasses .NET 8+ resilience infrastructure. Agents writing v7 patterns must be rejected:
+
+```csharp
+// BEFORE - REJECT: Legacy Polly v7 hand-rolled registration
+services.AddTransient<IAsyncPolicy<HttpResponseMessage>>(sp =>
+    Policy.Handle<HttpResponseException>()
+        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+        onRetry: (outcome, delay, retryCount, context) =>
+        {
+            // Manual logging, manual jitter, manual context
+            _logger.LogWarning("Retry {RetryCount} for {Request},", retryCount, context["request"]);
+        }));
+
+services.AddHttpClient<LegacyClient>()
+    .AddPolicyHandlerFromRegistry(Registry); // Brittle, no DI integration
+```
+
+**Enforce Microsoft.Extensions.Http.Resilience v8.** Use the standardized resilience handler that integrates with `IHttpClientFactory`, respects DI, and applies sensible defaults:
+
+```csharp
+// AFTER - ACCEPT: .NET 8+ Microsoft.Extensions.Http.Resilience
+services.AddHttpClient<CatalogClient>(c =>
+{
+    c.BaseAddress = new Uri("https://api.example.com");
+    c.Timeout = TimeSpan.FromSeconds(15); // Overall timeout
+})
+.AddStandardResilienceHandler(options =>
+{
+    options.Retry = new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true, // Critical: prevents retry storms
+        MaxDelay = TimeSpan.FromSeconds(5),
+        Delay = TimeSpan.FromSeconds(0.8), // Per-attempt timeout
+        ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+            .Handle<HttpRequestException>()
+            .HandleResult(response => !response.IsSuccessStatusCode &&
+                (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
+                 response.StatusCode == System.Net.HttpStatusCode.TooManyRequests ||
+                 response.StatusCode >= System.Net.HttpStatusCode.InternalServerError))
+    };
+    
+    options.CircuitBreaker = new HttpCircuitBreakerStrategyOptions
+    {
+        BreakDuration = TimeSpan.FromSeconds(30),
+        SamplingDuration = TimeSpan.FromSeconds(60),
+        FailureRatio = 0.5, // 50% failure rate
+        ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+            .Handle<HttpRequestException>()
+            .HandleResult(response => response.StatusCode >= System.Net.HttpStatusCode.InternalServerError)
+    };
+});
+```
+
+Rules that survive contact with production:
+- **Retry only idempotent things.** GET/PUT/DELETE by spec; POST only when the API supports idempotency keys - and then send one. Retrying a non-idempotent POST on timeout is how customers get charged twice: the timeout does not mean the first attempt failed, it means you do not know.
+- Retry counts: 2-3 with exponential backoff and jitter. Aggressive retries against a struggling dependency are a retry storm - you become the DDoS. **Jitter is not optional**; synchronized retry waves from N instances re-kill the recovering service.
+- Retry on: 408 (Request Timeout), 429 (Too Many Requests - **honor `Retry-After` header**), 5xx, connection failures. Never on 4xx besides those - retrying a 400 three times just burns latency on a request that cannot succeed.
+- **Circuit breaker on every dependency that can brown-out:** fail fast after the threshold instead of stacking doomed calls. Define the fallback behavior in review (cached data? degraded response? 503?) - a breaker without a decided fallback just moves where the exception is thrown.
+- **Timeout ordering:** Per-attempt timeout < overall timeout / (max retries + 1). If the per-attempt timeout is too long, retries never occur; if too short, legitimate calls fail. Example: overall 15s timeout with 3 retries → per-attempt ≤ 3.75s (use 3s).
+
+## Response handling
+
+- `EnsureSuccessStatusCode()` throws `HttpRequestException` with no body - useless in logs. When the API returns error details, read them: check `IsSuccessStatusCode`, capture status + a truncated body into the exception/log, then throw something meaningful.
+- `response.Content.ReadFromJsonAsync<T>(ct)`: streams and honors charset. `ReadAsStringAsync` + manual `Deserialize` buffers the payload twice.
+- `HttpCompletionOption.ResponseHeadersRead` for large downloads - default buffers the entire body into memory before your first read. Pair with `await using` on the response stream.
+- A `null` deserialized body from a 200 is a contract violation, not a value: throw, do not null-propagate a half-response into domain logic.
+
+## Boundary hygiene
+
+- Wrap each third-party API in one client class owning the DTOs, auth, and error translation. `HttpClient` calls and vendor DTOs scattered through application services means a vendor change is a whole-codebase change (see api-layer skill: same rule as any boundary).
+- Outbound auth: tokens fetched and cached by a `DelegatingHandler`, not per-call, and never logged (query-string tokens leak via logs - auth belongs in headers).
+- Every outbound call is in traces: `IHttpClientFactory` + OpenTelemetry propagates `traceparent` automatically; a client built outside the factory silently drops correlation.
