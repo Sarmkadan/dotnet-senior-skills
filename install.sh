@@ -289,6 +289,10 @@ if [ "$UPGRADE" = true ]; then
       if [ -e "$FILE_PATH" ]; then
         echo "Upgrading: $FILE_PATH" >&2
         # Upgrade logic here
+# Add version metadata to skill files after upgrade
+if [[ "$line" == .claude/skills/* ]]; then
+ add_version_metadata "$FILE_PATH" "$VERSION" "$SOURCE_COMMIT"
+fi
       else
         echo "Warning: File not found, skipping: $FILE_PATH" >&2
       fi
@@ -348,6 +352,30 @@ fi
 # --- Source directory ---
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
+# --- Version information ---
+VERSION=""
+SOURCE_COMMIT=""
+
+# Read version from VERSION file if it exists
+if [ -f "$SRC/VERSION" ]; then
+  VERSION=$(cat "$SRC/VERSION" | tr -d '\n' | tr -d '\r')
+fi
+
+# Get source commit hash if git is available
+if command -v git >/dev/null 2>&1 && [ -d "$SRC/.git" ]; then
+  SOURCE_COMMIT=$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo "")
+fi
+
+# If version is still empty, use a default
+if [ -z "$VERSION" ]; then
+  VERSION="unknown"
+fi
+
+# If source commit is empty, use a default
+if [ -z "$SOURCE_COMMIT" ]; then
+  SOURCE_COMMIT="unknown"
+fi
+
 # --- Installation tracking ---
 INSTALLED_FILES=""
 SKILLS_INSTALLED=0
@@ -386,6 +414,56 @@ is_file_modified() {
   fi
 
   return 1 # File hasn't been modified
+}
+
+# Function to add version metadata to skill file frontmatter
+add_version_metadata() {
+  local file_path="$1"
+  local version="$2"
+  local source_commit="$3"
+
+  # If it's a directory, recursively process all SKILL.md files
+  if [ -d "$file_path" ]; then
+    find "$file_path" -name "SKILL.md" -type f | while read -r skill_file; do
+      add_version_metadata "$skill_file" "$version" "$source_commit"
+    done
+    return 0
+  fi
+
+  # Only process files with frontmatter (SKILL.md files)
+  if ! grep -q '^---$' "$file_path" 2>/dev/null; then
+    return 0
+  fi
+
+  # Check if file already has version metadata
+  if grep -q '^version:' "$file_path" 2>/dev/null; then
+    return 0
+  fi
+
+  if grep -q '^source-commit:' "$file_path" 2>/dev/null; then
+    return 0
+  fi
+
+  # Create temporary file for processing
+  local temp_file="$(mktemp)"
+
+  # Use awk to insert version fields after the frontmatter start marker
+  awk -v version="$version" -v commit="$source_commit" '
+    BEGIN { added = 0 }
+    /^---$/ {
+      print
+      if (added == 0) {
+        print "version: " version
+        print "source-commit: " commit
+        added = 1
+      }
+      next
+    }
+    { print }
+  ' "$file_path" > "$temp_file"
+
+  # Replace original file with updated version
+  mv "$temp_file" "$file_path"
 }
 
 install_with_backup() {
@@ -442,6 +520,11 @@ install_with_backup() {
         ;;
     esac
   fi
+
+  # Add version metadata to skill files after installation
+  if [ "$category" = "skills" ]; then
+    add_version_metadata "$dest" "$VERSION" "$SOURCE_COMMIT"
+  fi
 }
 
 # --- Create target directories ---
@@ -476,15 +559,20 @@ if [ -d "$SRC/skills" ]; then
         # Copy this specific skill directory
         # Remove trailing slash to copy the directory itself
         skill_dir_no_slash="${skill_dir%/}"
+skill_name=$(basename "$skill_dir_no_slash")
+skill_dest="$TARGET/.claude/skills/$skill_name"
         if command -v rsync >/dev/null 2>&1; then
-          rsync -a "$skill_dir_no_slash/" "$TARGET/.claude/skills/$(basename "$skill_dir_no_slash")/" || {
+          rsync -a "$skill_dir_no_slash/" "$skill_dest/" || {
             echo "Error: Failed to copy skill directory: $skill_dir" >&2
             exit 1
           }
         else
           # Fallback to cp if rsync is not available
-          cp -r "$skill_dir_no_slash" "$TARGET/.claude/skills/" 2>/dev/null || true
+          cp -r "$skill_dir_no_slash" "$skill_dest" 2>/dev/null || true
         fi
+
+      # Add version metadata to the installed skill files
+      add_version_metadata "$skill_dest" "$VERSION" "$SOURCE_COMMIT"
       else
         echo "Skipping skill category: $category" >&2
       fi

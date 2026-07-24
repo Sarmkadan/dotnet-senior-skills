@@ -21,11 +21,23 @@ def validate_frontmatter(skill_file: Path) -> bool:
         print(f"ERROR: Missing frontmatter markers in {skill_file}")
         return False
 
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
+
     # Extract frontmatter section
     frontmatter_match = re.match(r'---\n(.*?)---', content, re.DOTALL)
     if not frontmatter_match:
         print(f"ERROR: Malformed frontmatter in {skill_file}")
         return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
 
     frontmatter = frontmatter_match.group(1)
 
@@ -42,9 +54,21 @@ def validate_frontmatter(skill_file: Path) -> bool:
         if field not in fields:
             print(f"ERROR: Missing '{field}' field in {skill_file}")
             return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
         if not fields[field]:
             print(f"ERROR: Empty '{field}' field in {skill_file}")
             return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
 
     # Validate name format (lowercase with hyphens)
     name = fields['name']
@@ -52,10 +76,22 @@ def validate_frontmatter(skill_file: Path) -> bool:
         print(f"ERROR: Skill name should be lowercase with hyphens: {name} in {skill_file}")
         return False
 
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
+
     # Validate name doesn't contain spaces or special chars (except hyphens)
     if not re.match(r'^[a-z0-9-]+$', name):
         print(f"ERROR: Skill name should only contain lowercase letters, numbers, and hyphens: {name} in {skill_file}")
         return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
 
     print(f"✓ Valid frontmatter in {skill_file}")
     return True
@@ -182,15 +218,33 @@ using Microsoft.EntityFrameworkCore;
                         print("STDERR:", result.stderr[:500])
                     return False
 
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
+
             print(f"  ✓ Compiled sample (line {line_num}) from {skill_file}")
             return True
 
         except subprocess.TimeoutExpired:
             print(f"ERROR: Timeout building sample (line {line_num}) from {skill_file}")
             return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
         except Exception as e:
             print(f"ERROR: Exception building sample (line {line_num}) from {skill_file}: {e}")
             return False
+
+  # Check for version metadata (optional but recommended)
+  if 'version' not in fields:
+    print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
+  if 'source-commit' not in fields:
+    print(f"⚠ Warning: Missing 'source-commit' field in {skill_file} - consider adding source commit metadata")
 
 
 def main():
