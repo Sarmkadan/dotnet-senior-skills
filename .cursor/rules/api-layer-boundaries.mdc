@@ -43,11 +43,11 @@ public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest req, Cancell
 
 - Returning an entity serializes navigation properties (cycles, lazy-load N+1 during serialization) and freezes your schema into your public contract - a column rename becomes a breaking API change.
 - Accepting an entity as a request body is mass assignment: the client can set `Id`, `IsAdmin`, `CreatedAt`, any FK. Bind to a request DTO that contains only client-settable fields, and map explicitly.
-- One DTO per direction and use case. Sharing a `UserDto` between create-request and detail-response forces nullable soup and accidental over-posting. Duplication of three properties is cheaper than a shared shape with divergent meanings.
+- One DTO per direction and use case. Sharing a `UserDto` between create-request and detail-response forces nullable soup and accidental over‑posting. Duplication of three properties is cheaper than a shared shape with divergent meanings.
 
 ## Application service: the workflow owner
 
-Owns: use-case orchestration, transaction boundary (one `SaveChanges`/transaction per use case, at the end), authorization decisions on domain data, publishing events. Takes commands/queries or primitives, returns DTOs or results - never `IQueryable`, never tracked entities to the caller.
+Owns: use‑case orchestration, transaction boundary (one `SaveChanges`/transaction per use case, at the end), authorization decisions on domain data, publishing events. Takes commands/queries or primitives, returns DTOs or results - never `IQueryable`, never tracked entities to the caller.
 
 Reject in services:
 - `HttpContext`, `IHttpContextAccessor` for anything but an abstracted `ICurrentUser`. The service layer must be callable from a message consumer or test without HTTP.
@@ -56,14 +56,76 @@ Reject in services:
 
 ## Repository / data layer
 
-Only if it earns its keep. A repository wrapping `DbSet` one-to-one (`GetById`, `Add`, generic `IRepository<T>`) is ceremony - EF's `DbContext` already is a unit of work + repository. Write repositories when they encapsulate real query logic (specifications, complex read models, multi-source aggregation) or when the domain layer must not reference EF. Whichever you pick, be consistent: services calling `DbContext` directly in half the codebase and repositories in the other half is worse than either.
+Only if it earns its keep. A repository wrapping `DbSet` one‑to‑one (`GetById`, `Add`, generic `IRepository<T>`) is ceremony - EF's `DbContext` already is a unit of work + repository. Write repositories when they encapsulate real query logic (specifications, complex read models, multi‑source aggregation) or when the domain layer must not reference EF. Whichever you pick, be consistent: services calling `DbContext` directly in half the codebase and repositories in the other half is worse than either.
 
-Data-layer rules regardless of pattern:
+Data‑layer rules regardless of pattern:
 - No business decisions - a method named `GetActivePayableOrders` encodes policy in a filter; the policy belongs above, or must be named and owned as a shared specification.
-- No `SaveChanges` sprinkled per-repository-call; the unit of work commits once per use case, else partial writes ship without transactions.
+- No `SaveChanges` sprinkled per‑repository‑call; the unit of work commits once per use case, else partial writes ship without transactions.
 
-## Cross-cutting placement
+## Cross‑cutting placement
 
 - Input shape validation (required, range, format): FluentValidation/DataAnnotations at the boundary. Business invariants (credit limit, state transitions): domain/service layer. Do not duplicate business rules in boundary validators - they drift.
 - Mapping: explicit methods or Mapster/AutoMapper with `ProjectTo` for queries; if a mapping needs services or conditionals, it is logic - write it as code, not configuration.
-- Reference direction: API -> Application -> Domain <- Infrastructure. The domain project references nothing of yours. Any `using MyApp.Api.*` inside Application is an architecture bug regardless of whether it compiles.
+- Reference direction: API → Application → Domain ← Infrastructure. The domain project references nothing of yours. Any `using MyApp.Api.*` inside Application is an architecture bug regardless of whether it compiles.
+
+## Input‑bound validation rule
+
+**Rule:** Any public controller action or minimal‑API endpoint that accepts a request DTO containing `string` fields which are later used to build file paths, SQL statements, shell commands, or external HTTP calls **must** perform explicit validation *before* the value is used. Validation includes length caps, allow‑list regular expressions, and for file‑system paths a `Path.GetFullPath` check against a known safe root to prevent path‑traversal. The validation should happen at the boundary (controller or endpoint) and throw an appropriate exception (`ArgumentException`, `ArgumentOutOfRangeException`, or a custom validation exception) if the input is invalid.
+
+### Before (invalid)
+
+```csharp
+[HttpPost]
+public async Task<IActionResult> Upload([FromBody] UploadRequest req)
+{
+    // Directly using user‑provided path fragment in file system call
+    var fullPath = Path.Combine(_settings.UploadRoot, req.FileName);
+    await System.IO.File.WriteAllBytesAsync(fullPath, req.Content);
+    return Ok();
+}
+```
+
+### After (valid)
+
+```csharp
+/// <summary>
+/// Uploads a file after validating the supplied file name.
+/// </summary>
+/// <param name="req">The upload request containing the file name and content.</param>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="req"/> is null.</exception>
+/// <exception cref="ArgumentException">Thrown when <paramref name="req.FileName"/> is null, empty, or contains illegal characters.</exception>
+/// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="req.FileName"/> exceeds the allowed length.</exception>
+[HttpPost]
+public async Task<IActionResult> Upload([FromBody] UploadRequest req)
+{
+    ArgumentNullException.ThrowIfNull(req);
+    // Guard clause: ensure a sane file name
+    if (string.IsNullOrWhiteSpace(req.FileName))
+        throw new ArgumentException("File name must be provided.", nameof(req.FileName));
+
+    const int MaxFileNameLength = 255;
+    if (req.FileName.Length > MaxFileNameLength)
+        throw new ArgumentOutOfRangeException(nameof(req.FileName), $"File name cannot exceed {MaxFileNameLength} characters.");
+
+    // Allow‑list: only alphanumeric, dash, underscore, and dot
+    if (!System.Text.RegularExpressions.Regex.IsMatch(req.FileName, @"^[a-zA-Z0-9._-]+$"))
+        throw new ArgumentException("File name contains illegal characters.", nameof(req.FileName));
+
+    // Prevent path traversal
+    var combined = Path.Combine(_settings.UploadRoot, req.FileName);
+    var fullPath = Path.GetFullPath(combined);
+    var rootFull = Path.GetFullPath(_settings.UploadRoot);
+    if (!fullPath.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException("File name resolves outside the upload directory.", nameof(req.FileName));
+
+    await System.IO.File.WriteAllBytesAsync(fullPath, req.Content);
+    return Ok();
+}
+```
+
+**Why this matters:**  
+- Prevents directory‑traversal attacks that could overwrite arbitrary files.  
+- Stops SQL injection or command‑injection vectors when strings are later interpolated into queries or shell commands.  
+- Guarantees that downstream layers receive only sanitized data, keeping validation responsibilities where they belong – at the API boundary.
+
+Enforce this rule during code reviews and static‑analysis scans that target files matching the `globs` defined in the front‑matter. Controllers or minimal‑API delegates that lack the guard clauses or explicit validation should be flagged for remediation.
