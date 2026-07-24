@@ -30,18 +30,67 @@ The review question for every outbound call: "what happens when this dependency 
 
 ## Retries without a foot-gun
 
-`Microsoft.Extensions.Http.Resilience` (`AddStandardResilienceHandler()`) or Polly - never a hand-rolled `for` loop with `Task.Delay`.
+**Reject legacy Polly v7 syntax.** The old `Policy.Handle<T>().WaitAndRetryAsync` and manual `IAsyncPolicy` registrations produce verbose, error-prone code that bypasses .NET 8+ resilience infrastructure. Agents writing v7 patterns must be rejected:
 
 ```csharp
-services.AddHttpClient<CatalogClient>(...)
-    .AddStandardResilienceHandler(); // retry + circuit breaker + per-attempt timeout, sane defaults
+// BEFORE - REJECT: Legacy Polly v7 hand-rolled registration
+services.AddTransient<IAsyncPolicy<HttpResponseMessage>>(sp =>
+    Policy.Handle<HttpResponseException>()
+        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+        onRetry: (outcome, delay, retryCount, context) =>
+        {
+            // Manual logging, manual jitter, manual context
+            _logger.LogWarning("Retry {RetryCount} for {Request},", retryCount, context["request"]);
+        }));
+
+services.AddHttpClient<LegacyClient>()
+    .AddPolicyHandlerFromRegistry(Registry); // Brittle, no DI integration
+```
+
+**Enforce Microsoft.Extensions.Http.Resilience v8.** Use the standardized resilience handler that integrates with `IHttpClientFactory`, respects DI, and applies sensible defaults:
+
+```csharp
+// AFTER - ACCEPT: .NET 8+ Microsoft.Extensions.Http.Resilience
+services.AddHttpClient<CatalogClient>(c =>
+{
+    c.BaseAddress = new Uri("https://api.example.com");
+    c.Timeout = TimeSpan.FromSeconds(15); // Overall timeout
+})
+.AddStandardResilienceHandler(options =>
+{
+    options.Retry = new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true, // Critical: prevents retry storms
+        MaxDelay = TimeSpan.FromSeconds(5),
+        Delay = TimeSpan.FromSeconds(0.8), // Per-attempt timeout
+        ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+            .Handle<HttpRequestException>()
+            .HandleResult(response => !response.IsSuccessStatusCode &&
+                (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
+                 response.StatusCode == System.Net.HttpStatusCode.TooManyRequests ||
+                 response.StatusCode >= System.Net.HttpStatusCode.InternalServerError))
+    };
+
+    options.CircuitBreaker = new HttpCircuitBreakerStrategyOptions
+    {
+        BreakDuration = TimeSpan.FromSeconds(30),
+        SamplingDuration = TimeSpan.FromSeconds(60),
+        FailureRatio = 0.5, // 50% failure rate
+        ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+            .Handle<HttpRequestException>()
+            .HandleResult(response => response.StatusCode >= System.Net.HttpStatusCode.InternalServerError)
+    };
+});
 ```
 
 Rules that survive contact with production:
 - **Retry only idempotent things.** GET/PUT/DELETE by spec; POST only when the API supports idempotency keys - and then send one. Retrying a non-idempotent POST on timeout is how customers get charged twice: the timeout does not mean the first attempt failed, it means you do not know.
-- Retry counts: 2-3 with exponential backoff and jitter. Aggressive retries against a struggling dependency are a retry storm - you become the DDoS. Jitter is not optional; synchronized retry waves from N instances re-kill the recovering service.
-- Retry on: 408, 429 (honor `Retry-After`), 5xx, connection failures. Never on 4xx besides those - retrying a 400 three times just burns latency on a request that cannot succeed.
-- Circuit breaker on every dependency that can brown-out: fail fast after the threshold instead of stacking doomed calls. Define the fallback behavior in review (cached data? degraded response? 503?) - a breaker without a decided fallback just moves where the exception is thrown.
+- Retry counts: 2-3 with exponential backoff and jitter. Aggressive retries against a struggling dependency are a retry storm - you become the DDoS. **Jitter is not optional**; synchronized retry waves from N instances re-kill the recovering service.
+- Retry on: 408 (Request Timeout), 429 (Too Many Requests - **honor `Retry-After` header**), 5xx, connection failures. Never on 4xx besides those - retrying a 400 three times just burns latency on a request that cannot succeed.
+- **Circuit breaker on every dependency that can brown-out:** fail fast after the threshold instead of stacking doomed calls. Define the fallback behavior in review (cached data? degraded response? 503?) - a breaker without a decided fallback just moves where the exception is thrown.
+- **Timeout ordering:** Per-attempt timeout < overall timeout / (max retries + 1). If the per-attempt timeout is too long, retries never occur; if too short, legitimate calls fail. Example: overall 15s timeout with 3 retries → per-attempt ≤ 3.75s (use 3s).
 
 ## Response handling
 
