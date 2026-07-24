@@ -29,16 +29,83 @@ Two call sites with different casing policies for the same contract is a bug fac
 
 ## Polymorphism without type-name injection
 
-Never accept a type name from the payload to decide what to construct - that is the deserialization RCE class (`TypeNameHandling.All` in Newtonsoft, custom `Type.GetType(json["$type"])` resolvers). System.Text.Json's allow-listed discriminators are the safe version:
+### UNSAFE: Reflection-based polymorphic deserialization
+
+Never accept a type name from the payload to decide what to construct using reflection - that is the deserialization RCE class:
+
+```csharp
+// UNSAFE: Type.GetType() with user-supplied type name - RCE vector
+var typeName = json["$type"]; // attacker-controlled
+var type = Type.GetType(typeName); // arbitrary assembly loading
+var instance = JsonSerializer.Deserialize(json, type); // RCE!
+
+// UNSAFE: TypeNameHandling-style patterns ported from Newtonsoft habits
+var options = new JsonSerializerOptions
+{
+    TypeInfoResolver = new DefaultJsonTypeInfoResolver() // allows arbitrary types
+};
+var result = JsonSerializer.Deserialize<BaseType>(json, options); // RCE!
+```
+
+These patterns enable arbitrary code execution (RCE) when deserializing untrusted input. An attacker can specify any .NET type from any assembly, including malicious types that execute code during construction.
+
+### SAFE: Allow-listed polymorphic discriminators
+
+System.Text.Json's allow-listed discriminators are the safe version:
 
 ```csharp
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(CardPayment), "card")]
 [JsonDerivedType(typeof(BankTransfer), "bank")]
 public abstract record Payment;
+
+// SAFE: Closed set of known types only
+var payment = JsonSerializer.Deserialize<Payment>(jsonWithTypeDiscriminator);
 ```
 
-The discriminator maps to a closed set you declared; an unknown value fails. Any deserializer configuration that can materialize arbitrary types from input data is a rejection regardless of how trusted the source claims to be - queues and databases are attacker-reachable in more incidents than anyone plans for.
+The discriminator maps to a closed set you declared; an unknown value fails. This is safe even for untrusted sources because it only materializes types you explicitly allow.
+
+### Security Hard Rule
+
+**Deserializing any type discriminator or `$type`-like field from untrusted (external API/user-supplied) JSON into a concrete .NET type MUST use an explicit allowlist of known types.** Never use:
+- `Type.GetType(userSuppliedString)` or `Type.GetType(userSuppliedString, throwOnError: false)`
+- Custom `JsonConverter` that switches types based on input
+- `TypeNameHandling` patterns or similar reflection-based type resolution
+- Unrestricted polymorphic converters
+
+These are known RCE/gadget-chain vectors in .NET deserialization. Even when the source claims to be trusted, queues and databases are attacker-reachable in more incidents than anyone plans for.
+
+### Before/After Example
+
+```csharp
+// BEFORE: UNSAFE - allows arbitrary type construction
+public class PaymentService
+{
+    public object ProcessPayment(string json)
+    {
+        // Attacker can specify "System.IO.File, System.IO, Version=4.2.0.0" as $type
+        // and execute arbitrary code during deserialization
+        return JsonSerializer.Deserialize<object>(json);
+    }
+}
+
+// AFTER: SAFE - closed set of allowed types
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "paymentMethod")]
+[JsonDerivedType(typeof(CardPayment), "card")]
+[JsonDerivedType(typeof(BankTransfer), "bank")]
+[JsonDerivedType(typeof(DigitalWallet), "wallet")]
+public abstract record Payment;
+
+public class PaymentService
+{
+    public Payment ProcessPayment(string json)
+    {
+        // Only CardPayment, BankTransfer, or DigitalWallet can be constructed
+        // Unknown paymentMethod values throw JsonException
+        return JsonSerializer.Deserialize<Payment>(json);
+    }
+}
+```
 
 ## Large payloads: stream, don't buffer
 
