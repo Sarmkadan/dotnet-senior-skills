@@ -60,8 +60,56 @@ Multiple `UtcNow` reads inside one operation is a subtler bug: the value changes
 - `TimeSpan` for durations in APIs and options, not `int timeoutSeconds` - `TimeSpan.FromSeconds(30)` reads unambiguously, and misread units (ms vs s) are a classic 1000x incident.
 - Recurring jobs defined as "daily at 02:30" in a DST-observing zone either skip or double-fire once a year. Schedule in UTC, or use a scheduler (Quartz, Hangfire) that has an explicit DST policy - not a hand-rolled `Task.Delay` loop computing the next local occurrence.
 
-## Persistence and serialization flags
+## Detection Fixtures
 
-- SQL Server: `datetimeoffset` column for `DateTimeOffset`, `datetime2` never plain `datetime` (1753 floor, 3ms precision). PostgreSQL + Npgsql: `timestamp with time zone` stores UTC and Npgsql 6+ throws on non-UTC `DateTime` values - the exception is telling you a `Kind` bug exists upstream; fix the source, do not `SpecifyKind` at the call site.
-- JSON: `System.Text.Json` emits ISO 8601. A client sending `"2026-07-17T10:00:00"` (no offset) deserializes into `Kind.Unspecified` - reject offset-less timestamps at the API contract level for instant fields.
-- Unix epoch interop (`ToUnixTimeSeconds`) is always UTC by definition; a conversion helper that touches `TimeZoneInfo` on the way to epoch seconds is wrong.
+These fixtures provide concrete, compilable C# examples of anti-patterns that can be used by analysis tools to verify detection logic.
+
+### DST-boundary comparisons
+
+```csharp
+public class DstExample
+{
+    public void ComparisonAcrossTransition()
+    {
+        // WRONG: Comparing DateTime.Now across possible DST transitions
+        // can lead to unexpected behavior if the clock jumps.
+        var now = DateTime.Now;
+        var nextDay = now.AddDays(1);
+        if (now > nextDay) { }
+    }
+}
+```
+
+### Serialized DateTime without Kind information
+
+```csharp
+using System.Text.Json;
+
+public class SerializationExample
+{
+    public void RoundTrip()
+    {
+        var json = "{\"CreatedAt\":\"2026-07-17T10:00:00\"}";
+        // WRONG: Deserializing into DateTime without Kind info loses timezone context
+        var obj = JsonSerializer.Deserialize<MyModel>(json);
+    }
+}
+
+public class MyModel
+{
+    public DateTime CreatedAt { get; set; }
+}
+```
+
+### Windows-only TimeZoneInfo lookup
+
+```csharp
+public class TimeZoneExample
+{
+    public void Lookup()
+    {
+        // WRONG: Windows-only zone ID is a portability bug on Linux
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("FYRO Macedonia Standard Time");
+    }
+}
+```
