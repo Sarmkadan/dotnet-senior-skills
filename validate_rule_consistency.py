@@ -10,9 +10,14 @@ hard thresholds, and detailed explanations across the three formats.
 """
 
 import re
+import argparse
+import logging
 from pathlib import Path
 from typing import Dict, List
 
+
+# Configure module-level logger
+logger = logging.getLogger(__name__)
 
 
 class RuleFormat:
@@ -246,8 +251,8 @@ def print_reconciliation_help(results: Dict):
     issues = results["issues"]
     formats = results["formats"]
 
-    print("\n🔧 RECONCILIATION GUIDANCE")
-    print("-" * 80)
+    logger.info("\n🔧 RECONCILIATION GUIDANCE")
+    logger.info("-" * 80)
 
     # Code example issues
     sk_blocks = formats["SKILL.md"].code_blocks
@@ -255,15 +260,15 @@ def print_reconciliation_help(results: Dict):
     copilot_blocks = formats["copilot"].code_blocks
 
     if sk_blocks != mdc_blocks:
-        print(f"\n⚠️  .mdc file needs updating:")
-        print(f"   SKILL.md has {sk_blocks} code blocks, .mdc has {mdc_blocks}")
-        print(f"   Action: Copy code examples from SKILL.md to .cursor/rules/{skill_name}.mdc")
+        logger.info(f"\n⚠️  .mdc file needs updating:")
+        logger.info(f"   SKILL.md has {sk_blocks} code blocks, .mdc has {mdc_blocks}")
+        logger.info(f"   Action: Copy code examples from SKILL.md to .cursor/rules/{skill_name}.mdc")
 
     if sk_blocks != copilot_blocks:
-        print(f"\n⚠️  copilot-instructions.md needs updating:")
-        print(f"   SKILL.md has {sk_blocks} code blocks, copilot has {copilot_blocks}")
-        print(f"   Action: Add condensed rule statements to .github/copilot-instructions.md")
-        print(f"   Tip: Preserve hard thresholds like '2-3 attempts', 'one use case', etc.")
+        logger.info(f"\n⚠️  copilot-instructions.md needs updating:")
+        logger.info(f"   SKILL.md has {sk_blocks} code blocks, copilot has {copilot_blocks}")
+        logger.info(f"   Action: Add condensed rule statements to .github/copilot-instructions.md")
+        logger.info(f"   Tip: Preserve hard thresholds like '2-3 attempts', 'one use case', etc.")
 
     # Hard threshold issues
     all_thresholds = set()
@@ -280,25 +285,37 @@ def print_reconciliation_help(results: Dict):
 
         if len(formats_with_threshold) < 2:
             present_in = ', '.join(formats_with_threshold) if formats_with_threshold else 'none'
-            print(f"\n⚠️  Hard threshold/exception '{threshold}' exists in only {present_in}")
-            print(f"   Action: Ensure '{threshold}' is mentioned in all three formats")
+            logger.info(f"\n⚠️  Hard threshold/exception '{threshold}' exists in only {present_in}")
+            logger.info(f"   Action: Ensure '{threshold}' is mentioned in all three formats")
 
-    print("\n📋 QUICK FIX COMMANDS:")
-    print(f"  1. Update .mdc file:")
-    print(f"     cp skills/{skill_name}/SKILL.md .cursor/rules/{skill_name}.mdc")
-    print(f"\n  2. Update copilot section:")
-    print(f"     vim .github/copilot-instructions.md")
-    print(f"     # Add condensed version under appropriate category header")
-    print(f"\n  3. Verify fix:")
-    print(f"     python3 validate_rule_consistency.py")
+    logger.info("\n📋 QUICK FIX COMMANDS:")
+    logger.info(f"  1. Update .mdc file:")
+    logger.info(f"     cp skills/{skill_name}/SKILL.md .cursor/rules/{skill_name}.mdc")
+    logger.info(f"\n  2. Update copilot section:")
+    logger.info(f"     vim .github/copilot-instructions.md")
+    logger.info(f"     # Add condensed version under appropriate category header")
+    logger.info(f"\n  3. Verify fix:")
+    logger.info(f"     python3 validate_rule_consistency.py")
 
 
 def main():
     """Main validation function."""
-    print("=" * 80)
-    print("Rule Format Consistency Check")
-    print("=" * 80)
-    print()
+    parser = argparse.ArgumentParser(description='Validate consistency across rule formats')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    args = parser.parse_args()
+
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s',
+        force=True  # Override any existing configuration
+    )
+
+    logger.info("=" * 80)
+    logger.info("Rule Format Consistency Check")
+    logger.info("=" * 80)
+    logger.info("")
 
     # List of the 13 skills to check
     skills_to_check = [
@@ -321,50 +338,50 @@ def main():
     issues_found = 0
 
     for skill_name in skills_to_check:
-        print(f"\nChecking skill: {skill_name}")
-        print("-" * 80)
+        logger.info(f"\nChecking skill: {skill_name}")
+        logger.info("-" * 80)
 
         results = validate_skill(skill_name)
         all_skills.append(results)
 
         if results["issues"]:
-            print(f" ⚠️ Issues found:")
+            logger.warning(f" ⚠️ Issues found:")
             for issue in results["issues"]:
-                print(f" - {issue}")
+                logger.warning(f" - {issue}")
             issues_found += 1
             print_reconciliation_help(results)
         else:
-            print(f" ✓ No consistency issues detected")
+            logger.info(f" ✓ No consistency issues detected")
 
-    print()
-    print("=" * 80)
-    print("Summary")
-    print("=" * 80)
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("Summary")
+    logger.info("=" * 80)
 
     total_skills = len(skills_to_check)
     skills_with_issues = sum(1 for s in all_skills if s["issues"])
 
-    print(f"Total skills checked: {total_skills}")
-    print(f"Skills with issues: {skills_with_issues}")
-    print(f"Total issues found: {issues_found}")
-    print()
+    logger.info(f"Total skills checked: {total_skills}")
+    logger.info(f"Skills with issues: {skills_with_issues}")
+    logger.info(f"Total issues found: {issues_found}")
+    logger.info("")
 
     if issues_found > 0:
-        print("❌ Consistency issues detected!")
-        print("\nThis script helps identify drift between:")
-        print(" 1. Full SKILL.md files (skills/*/SKILL.md)")
-        print(" 2. Cursor .mdc rules (.cursor/rules/*.mdc)")
-        print(" 3. Condensed Copilot instructions (.github/copilot-instructions.md)")
-        print("\nCommon issues to check:")
-        print(" - Code examples present in SKILL.md but missing in .mdc or copilot")
-        print(" - Hard thresholds (e.g., 'two or more') mentioned in one format only")
-        print(" - Exception types mentioned in one format but not others")
-        print(" - Detailed explanations condensed in copilot vs full in SKILL.md")
-        print("\n💡 Tip: Run 'python3 reconcile_rules.py report' for detailed analysis")
-        print("💡 Tip: Run 'python3 reconcile_rules.py checklist' for manual review guidance")
+        logger.error("❌ Consistency issues detected!")
+        logger.info("\nThis script helps identify drift between:")
+        logger.info(" 1. Full SKILL.md files (skills/*/SKILL.md)")
+        logger.info(" 2. Cursor .mdc rules (.cursor/rules/*.mdc)")
+        logger.info(" 3. Condensed Copilot instructions (.github/copilot-instructions.md)")
+        logger.info("\nCommon issues to check:")
+        logger.info(" - Code examples present in SKILL.md but missing in .mdc or copilot")
+        logger.info(" - Hard thresholds (e.g., 'two or more') mentioned in one format only")
+        logger.info(" - Exception types mentioned in one format but not others")
+        logger.info(" - Detailed explanations condensed in copilot vs full in SKILL.md")
+        logger.info("\n💡 Tip: Run 'python3 reconcile_rules.py report' for detailed analysis")
+        logger.info("\n💡 Tip: Run 'python3 reconcile_rules.py checklist' for manual review guidance")
         return 1
     else:
-        print("✅ All skills are consistent across formats!")
+        logger.info("✅ All skills are consistent across formats!")
         return 0
 
 
