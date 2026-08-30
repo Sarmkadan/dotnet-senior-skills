@@ -15,9 +15,48 @@ Usage:
 """
 
 import json
+import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List
+
+
+def validate_skills_directory():
+    """Return whether the skills directory is available for processing."""
+    skills_directory = Path("skills")
+    if not skills_directory.is_dir():
+        print("Error: skills/ directory does not exist.", file=sys.stderr)
+        return False
+
+    try:
+        next(skills_directory.iterdir())
+    except StopIteration:
+        print("Error: skills/ directory is empty.", file=sys.stderr)
+        return False
+    except OSError as error:
+        print(f"Error: cannot inspect skills/ directory: {error}", file=sys.stderr)
+        return False
+
+    return True
+
+
+def read_text_file(path):
+    """Read a UTF-8 file, reporting failures without ending the run."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except (OSError, UnicodeError) as error:
+        print(f"Warning: could not read {path}: {error}", file=sys.stderr)
+        return None
+
+
+def has_frontmatter(content, path):
+    """Return whether content starts with a complete frontmatter block."""
+    frontmatter = re.match(r"\A---\s*\n.*?\n---\s*(?:\n|$)", content, re.DOTALL)
+    if frontmatter is None:
+        print(f"Warning: no frontmatter found in {path}; skipping.", file=sys.stderr)
+        return False
+    return True
 
 
 def run_consistency_check():
@@ -72,19 +111,20 @@ def generate_detailed_report():
         # Check SKILL.md
         skill_file = Path("skills") / skill_name / "SKILL.md"
         if skill_file.exists():
-            content = skill_file.read_text(encoding='utf-8')
-            code_blocks = content.count('```csharp')
-            lines = [l for l in content.split('\n') if l.strip()]
-            meaningful_lines = [l for l in lines if not l.startswith('#') and not l.startswith('---')]
+            content = read_text_file(skill_file)
+            if content is not None and has_frontmatter(content, skill_file):
+                code_blocks = content.count('```csharp')
+                lines = [l for l in content.split('\n') if l.strip()]
+                meaningful_lines = [l for l in lines if not l.startswith('#') and not l.startswith('---')]
 
-            skill_report["formats"]["SKILL.md"] = {
-                "exists": True,
-                "code_blocks": code_blocks,
-                "line_count": len(lines),
-                "meaningful_line_count": len(meaningful_lines),
-                "size_bytes": len(content)
-            }
-            print(f"  SKILL.md: {code_blocks} code blocks, {len(meaningful_lines)} meaningful lines")
+                skill_report["formats"]["SKILL.md"] = {
+                    "exists": True,
+                    "code_blocks": code_blocks,
+                    "line_count": len(lines),
+                    "meaningful_line_count": len(meaningful_lines),
+                    "size_bytes": len(content)
+                }
+                print(f"  SKILL.md: {code_blocks} code blocks, {len(meaningful_lines)} meaningful lines")
         else:
             skill_report["issues"].append("SKILL.md not found")
             print(f"  SKILL.md: NOT FOUND")
@@ -92,19 +132,20 @@ def generate_detailed_report():
         # Check .mdc
         mdc_file = Path(".cursor/rules") / f"{skill_name}.mdc"
         if mdc_file.exists():
-            content = mdc_file.read_text(encoding='utf-8')
-            code_blocks = content.count('```csharp')
-            lines = [l for l in content.split('\n') if l.strip()]
-            meaningful_lines = [l for l in lines if not l.startswith('#') and not l.startswith('---')]
+            content = read_text_file(mdc_file)
+            if content is not None and has_frontmatter(content, mdc_file):
+                code_blocks = content.count('```csharp')
+                lines = [l for l in content.split('\n') if l.strip()]
+                meaningful_lines = [l for l in lines if not l.startswith('#') and not l.startswith('---')]
 
-            skill_report["formats"]["mdc"] = {
-                "exists": True,
-                "code_blocks": code_blocks,
-                "line_count": len(lines),
-                "meaningful_line_count": len(meaningful_lines),
-                "size_bytes": len(content)
-            }
-            print(f"  .mdc: {code_blocks} code blocks, {len(meaningful_lines)} meaningful lines")
+                skill_report["formats"]["mdc"] = {
+                    "exists": True,
+                    "code_blocks": code_blocks,
+                    "line_count": len(lines),
+                    "meaningful_line_count": len(meaningful_lines),
+                    "size_bytes": len(content)
+                }
+                print(f"  .mdc: {code_blocks} code blocks, {len(meaningful_lines)} meaningful lines")
         else:
             skill_report["issues"].append(".mdc file not found")
             print(f"  .mdc: NOT FOUND")
@@ -112,7 +153,10 @@ def generate_detailed_report():
         # Check copilot section
         copilot_path = Path(".github/copilot-instructions.md")
         if copilot_path.exists():
-            content = copilot_path.read_text(encoding='utf-8')
+            content = read_text_file(copilot_path)
+            if content is None:
+                report["skills"][skill_name] = skill_report
+                continue
             # Map skill names to copilot categories
             skill_to_category = {
                 "serialization-review": "Serialization",
@@ -276,14 +320,15 @@ def generate_checklist():
 
 def main():
     """Main function."""
-    import sys
-
     if len(sys.argv) < 2:
         print("Usage: python3 reconcile_rules.py <command>")
         print("  check    - Check consistency (default)")
         print("  report   - Generate detailed consistency report")
         print("  checklist - Generate manual review checklist")
         return 1
+
+    if not validate_skills_directory():
+        return 2
 
     command = sys.argv[1]
 
