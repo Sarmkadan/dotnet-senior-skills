@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: ./install.sh [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>
+# Usage: ./install.sh [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--dry-run] [--uninstall /path] [--upgrade /path] <target-project-dir>
 # Installs Claude Code skills, Cursor rules, and Copilot instructions into a target project.
 #
 # Options:
@@ -7,6 +7,7 @@
 # --only CATEGORIES Comma-separated list of skill categories to install (e.g., ef,async,globalization)
 # --skip CATEGORIES Comma-separated list of skill categories to skip (e.g., ef,globalization)
 # --force Overwrite existing files without prompting
+# --dry-run Perform detection and checks, then print file operations without changing the target
 # --uninstall /path Remove files previously installed by this installer
 # --upgrade /path Upgrade files previously installed by this installer
 #
@@ -25,6 +26,10 @@ UPGRADE_PATH=""
 TOOLS=""
 ONLY_CATEGORIES=""
 SKIP_CATEGORIES=""
+DRY_RUN=false
+
+# --- Source directory ---
+SRC="$(cd "$(dirname "$0")" && pwd)"
 
 # --- Helper functions ---
 
@@ -119,6 +124,10 @@ while [ $# -gt 0 ]; do
       FORCE=true
       shift
       ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
     --uninstall)
       UNINSTALL=true
       shift
@@ -145,7 +154,7 @@ while [ $# -gt 0 ]; do
       ;;
     --*)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
+      echo "Usage: $0 [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--dry-run] [--uninstall /path] [--upgrade /path] <target-project-dir>" >&2
       exit 1
       ;;
     *)
@@ -261,8 +270,12 @@ if [ "$UNINSTALL" = true ]; then
     if [ -n "$line" ]; then
       FILE_PATH="$UNINSTALL_PATH/$line"
       if [ -e "$FILE_PATH" ]; then
-        echo "Removing: $FILE_PATH" >&2
-        rm -f "$FILE_PATH"
+        if [ "$DRY_RUN" = true ]; then
+          echo "[dry-run] remove $FILE_PATH"
+        else
+          echo "Removing: $FILE_PATH" >&2
+          rm -f "$FILE_PATH"
+        fi
       else
         echo "Warning: File not found, skipping: $FILE_PATH" >&2
       fi
@@ -270,7 +283,11 @@ if [ "$UNINSTALL" = true ]; then
   done < "$MANIFEST_FILE"
 
   # Remove the manifest file itself
-  rm -f "$MANIFEST_FILE"
+  if [ "$DRY_RUN" = true ]; then
+    echo "[dry-run] remove $MANIFEST_FILE"
+  else
+    rm -f "$MANIFEST_FILE"
+  fi
 
   echo "Uninstallation complete!" >&2
   exit 0
@@ -298,6 +315,10 @@ if [ "$UPGRADE" = true ]; then
     if [ -n "$line" ]; then
       FILE_PATH="$UPGRADE_PATH/$line"
       if [ -e "$FILE_PATH" ]; then
+        if [ "$DRY_RUN" = true ]; then
+          echo "[dry-run] overwrite $FILE_PATH"
+          continue
+        fi
         echo "Upgrading: $FILE_PATH" >&2
         # Upgrade logic here
 # Add version metadata to skill files after upgrade
@@ -359,9 +380,6 @@ if [ -z "${SKIP_VALIDATION+x}" ]; then
     echo "but contains solution or project files. Proceeding anyway." >&2
   fi
 fi
-
-# --- Source directory ---
-SRC="$(cd "$(dirname "$0")" && pwd)"
 
 # --- Version information ---
 VERSION=""
@@ -498,8 +516,12 @@ install_with_backup() {
       fi
     else
       if ! cmp -s "$src" "$dest"; then
-        echo "Warning: Overwriting existing file with different content: $dest" >&2
-        cp -f "$src" "$dest"
+        if [ "$DRY_RUN" = true ]; then
+          echo "[dry-run] overwrite $dest"
+        else
+          echo "Warning: Overwriting existing file with different content: $dest" >&2
+          cp -f "$src" "$dest"
+        fi
         INSTALLED_FILES="$INSTALLED_FILES $dest"
         MANIFEST_CONTENT="$MANIFEST_CONTENT\n$relative_path"
         case "$category" in
@@ -518,8 +540,12 @@ install_with_backup() {
       fi
     fi
   else
-    mkdir -p "$(dirname "$dest")"
-    cp -f "$src" "$dest"
+    if [ "$DRY_RUN" = true ]; then
+      echo "[dry-run] copy $dest"
+    else
+      mkdir -p "$(dirname "$dest")"
+      cp -f "$src" "$dest"
+    fi
     INSTALLED_FILES="$INSTALLED_FILES $dest"
     MANIFEST_CONTENT="$MANIFEST_CONTENT\n$relative_path"
     case "$category" in
@@ -536,16 +562,18 @@ install_with_backup() {
   fi
 
   # Add version metadata to skill files after installation
-  if [ "$category" = "skills" ]; then
+  if [ "$category" = "skills" ] && [ "$DRY_RUN" = false ]; then
     add_version_metadata "$dest" "$VERSION" "$SOURCE_COMMIT"
   fi
 }
 
 # --- Create target directories ---
+if [ "$DRY_RUN" = false ]; then
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.cursor/rules" "$TARGET/.github" || {
   echo "Error: Failed to create target directories in $TARGET" >&2
   exit 1
 }
+fi
 
 # --- Check if already installed ---
 MANIFEST_FILE="$TARGET/.claude/skills/.dotnet-senior-skills-manifest"
@@ -556,7 +584,17 @@ if [ -f "$MANIFEST_FILE" ]; then
 fi
 
 # --- Install skills ---
-if [ -d "$SRC/skills" ]; then
+skills_should_install=false
+for tool in $(echo "$TOOLS" | tr ',' ' '); do
+  if [ "$tool" = "claude" ]; then
+    skills_should_install=true
+    break
+  fi
+done
+
+if [ "$skills_should_install" = false ]; then
+  echo "Skipping Claude Code skills installation (not requested via --tools)" >&2
+elif [ -d "$SRC/skills" ]; then
   if [ "$(ls -A "$SRC/skills" 2>/dev/null)" = "" ]; then
     echo "Error: Source skills directory is empty: $SRC/skills" >&2
     exit 1
@@ -575,18 +613,10 @@ if [ -d "$SRC/skills" ]; then
         skill_dir_no_slash="${skill_dir%/}"
 skill_name=$(basename "$skill_dir_no_slash")
 skill_dest="$TARGET/.claude/skills/$skill_name"
-        if command -v rsync >/dev/null 2>&1; then
-          rsync -a "$skill_dir_no_slash/" "$skill_dest/" || {
-            echo "Error: Failed to copy skill directory: $skill_dir" >&2
-            exit 1
-          }
-        else
-          # Fallback to cp if rsync is not available
-          cp -r "$skill_dir_no_slash" "$skill_dest" 2>/dev/null || true
-        fi
-
-      # Add version metadata to the installed skill files
-      add_version_metadata "$skill_dest" "$VERSION" "$SOURCE_COMMIT"
+        for skill_file in $(find "$skill_dir_no_slash" -type f); do
+          relative_file="${skill_file#$skill_dir_no_slash/}"
+          install_with_backup "$skill_file" "$skill_dest/$relative_file" "skills" ".claude/skills/$skill_name/$relative_file"
+        done
       else
         echo "Skipping skill category: $category" >&2
       fi
@@ -684,9 +714,13 @@ if [ "$copilot_should_install" = true ]; then
 fi
 
 # --- Write manifest file ---
-if [ -n "$MANIFEST_CONTENT" ]; then
+if [ -n "$MANIFEST_CONTENT" ] && [ "$DRY_RUN" = false ]; then
   MANIFEST_FILE="$TARGET/.claude/skills/.dotnet-senior-skills-manifest"
   echo "$MANIFEST_CONTENT" | sed '/^$/d' > "$MANIFEST_FILE"
+fi
+
+if [ "$DRY_RUN" = true ] && [ -n "$INSTALLED_FILES" ]; then
+  echo "[dry-run] copy $TARGET/.claude/skills/.dotnet-senior-skills-manifest"
 fi
 
 # --- Summary ---
@@ -728,6 +762,9 @@ if [ -n "$INSTALLED_FILES" ]; then
   echo "\nTarget: $TARGET" >&2
   echo "\nManifest created: $MANIFEST_FILE" >&2
 else
+  if [ "$DRY_RUN" = true ]; then
+    exit 0
+  fi
   echo "Warning: No files were installed" >&2
   exit 1
 fi
