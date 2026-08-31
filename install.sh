@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Usage: ./install.sh [--tools TOOLS] [--only CATEGORIES] [--skip CATEGORIES] [--force] [--dry-run] [--uninstall /path] [--upgrade /path] <target-project-dir>
 # Installs Claude Code skills, Cursor rules, and Copilot instructions into a target project.
 #
