@@ -46,7 +46,7 @@ def validate_frontmatter(skill_file: Path) -> bool:
             print(f"ERROR: Empty '{field}' field in {skill_file}")
             return False
 
-    # Check for version metadata (optional but recommended)
+    # Check for optional metadata (version and source-commit)
     if 'version' not in fields:
         print(f"⚠ Warning: Missing 'version' field in {skill_file} - consider adding version metadata")
     if 'source-commit' not in fields:
